@@ -14,7 +14,7 @@ def connect_mt5(login, password, server):
 @app.route('/mt5/orders', methods=['POST'])
 def get_mt5_orders():
     data = request.json
-    login = data.get('login')
+    login = int(data.get('login'))
     password = data.get('password')
     server = data.get('server')
 
@@ -44,7 +44,7 @@ def get_mt5_orders():
 @app.route('/mt5/account', methods=['POST'])
 def get_mt5_account():
     data = request.json
-    login = data.get('login')
+    login = int(data.get('login'))
     password = data.get('password')
     server = data.get('server')
 
@@ -67,7 +67,7 @@ def get_mt5_account():
 @app.route('/mt5/all', methods=['POST'])
 def get_mt5_all():
     data = request.json
-    login = data.get('login')
+    login = int(data.get('login'))
     password = data.get('password')
     server = data.get('server')
 

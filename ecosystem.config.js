@@ -2,10 +2,9 @@ module.exports = {
   apps: [
     {
       name: 'mt5-flask-api',
-      script: 'python',
-      args: 'mt5-agent/mt5_connect.py', // đường dẫn đến file .py
-      interpreter: 'python3', // Hoặc 'python' tùy vào hệ thống
-      cwd: './',              // Root folder của dự án (NestJS)
+      script: 'mt5-agent/mt5_connect.py',           // ✅ Đây là file Flask
+      interpreter: 'python',                          // ✅ Dùng command python đã được test là có sẵn
+      cwd: './',
       env: {
         FLASK_ENV: 'production',
         PORT: 3115
@@ -13,7 +12,7 @@ module.exports = {
       autorestart: true,
       watch: false,
       max_restarts: 10,
-      restart_delay: 1000,
+      restart_delay: 1000
     }
   ]
 };

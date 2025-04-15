@@ -19,18 +19,70 @@ export class TelegramService implements OnModuleInit {
 
     this.bot = new TelegramBot(token, { polling: true });
 
-    this.bot.on('message', (msg) => {
+    // Xử lý lệnh /start với inline keyboard
+    this.bot.onText(/\/start/, (msg) => {
       const chatId = msg.chat.id;
-      this.bot.sendMessage(chatId, '👋 Xin chào! Tôi là bot NestJS.');
+      const name = msg.from?.first_name || 'bạn';
+
+      const welcomeText = `👋 Chào mừng ${name} đến với bot NestJS!\nBạn có thể chọn một trong các chức năng dưới đây:`;
+
+      const inlineKeyboard = {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '📊 Account Info', callback_data: 'account_info' },
+              { text: '📈 Open Position', callback_data: 'open_position' },
+            ],
+            [
+              { text: '📜 Order Histories', callback_data: 'order_histories' },
+            ],
+          ],
+        },
+      };
+
+      this.bot.sendMessage(chatId, welcomeText, inlineKeyboard);
     });
 
-    // Ví dụ lắng nghe lệnh "/start"
-    this.bot.onText(/\/start/, (msg) => {
-      this.bot.sendMessage(
-        msg.chat.id,
-        `Chào mừng ${msg.from?.first_name || 'bạn'} đến với bot!`,
-      );
+    // Xử lý khi user click vào nút inline keyboard
+    this.bot.on('callback_query', (query) => {
+      const chatId = query.message?.chat.id;
+      const data = query.data;
+
+      if (!chatId) return;
+
+      switch (data) {
+        case 'account_info':
+          this.handleAccountInfo(chatId);
+          break;
+        case 'open_position':
+          this.handleOpenPositions(chatId);
+          break;
+        case 'order_histories':
+          this.handleOrderHistories(chatId);
+          break;
+        default:
+          this.bot.sendMessage(chatId, '❓ Không xác định chức năng.');
+          break;
+      }
+
+      // Xóa loading indicator trên Telegram UI
+      this.bot.answerCallbackQuery(query.id);
     });
+  }
+
+  private handleAccountInfo(chatId: number | string) {
+    const mock = `📊 *Account Info*\nBalance: 10,000 USD\nEquity: 10,100 USD\nMargin: 250 USD`;
+    this.bot.sendMessage(chatId, mock, { parse_mode: 'Markdown' });
+  }
+
+  private handleOpenPositions(chatId: number | string) {
+    const mock = `📈 *Open Positions*\nEURUSD – Buy 0.1 lot @ 1.0900\nXAUUSD – Sell 0.05 lot @ 1940`;
+    this.bot.sendMessage(chatId, mock, { parse_mode: 'Markdown' });
+  }
+
+  private handleOrderHistories(chatId: number | string) {
+    const mock = `📜 *Order Histories (7 ngày)*\n✅ Buy USDJPY – +$50\n❌ Sell EURUSD – -$20`;
+    this.bot.sendMessage(chatId, mock, { parse_mode: 'Markdown' });
   }
 
   sendMessage(chatId: number | string, text: string) {
