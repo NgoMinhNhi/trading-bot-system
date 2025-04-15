@@ -13,21 +13,21 @@ export class SchedulerService {
     private readonly telegramService: TelegramService,
   ) {}
 
-  @Cron('0 */5 * * * *') // Runs every 5 minutes
-  async handleCron() {
-    this.logger.debug('Running scheduled task every 5 minutes');
-
-    try {
-      // Call your third-party API
-      const data = await this.apiClientService.fetchData('some-endpoint');
-
-      // Process the data
-      this.logger.log('Data fetched successfully');
-
-      // Optionally send notification via Telegram
-      // this.telegramService.sendMessage('your-chat-id', 'Scheduled task completed successfully');
-    } catch (error) {
-      this.logger.error(`Scheduled task failed: ${error}`);
-    }
-  }
+  // @Cron('0 */5 * * * *') // Runs every 5 minutes
+  // async handleCron() {
+  //   this.logger.debug('Running scheduled task every 5 minutes');
+  //
+  //   try {
+  //     // Call your third-party API
+  //     const data = await this.apiClientService.fetchData('some-endpoint');
+  //
+  //     // Process the data
+  //     this.logger.log('Data fetched successfully');
+  //
+  //     // Optionally send notification via Telegram
+  //     // this.telegramService.sendMessage('your-chat-id', 'Scheduled task completed successfully');
+  //   } catch (error) {
+  //     this.logger.error(`Scheduled task failed: ${error}`);
+  //   }
+  // }
 }
