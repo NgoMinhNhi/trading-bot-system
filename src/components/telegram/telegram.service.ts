@@ -7,7 +7,8 @@ export class TelegramService implements OnModuleInit {
   private bot: TelegramBot;
   private readonly logger = new Logger(TelegramService.name);
 
-  constructor(private configService: ConfigService) {}
+  constructor(
+    private configService: ConfigService,) {}
 
   onModuleInit() {
     const token = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
@@ -22,25 +23,12 @@ export class TelegramService implements OnModuleInit {
     // Xử lý lệnh /start với inline keyboard
     this.bot.onText(/\/start/, (msg) => {
       const chatId = msg.chat.id;
+      console.log('chatId ', chatId);
       const name = msg.from?.first_name || 'bạn';
 
       const welcomeText = `👋 Chào mừng ${name} đến với bot NestJS!\nBạn có thể chọn một trong các chức năng dưới đây:`;
 
-      const inlineKeyboard = {
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: '📊 Account Info', callback_data: 'account_info' },
-              { text: '📈 Open Position', callback_data: 'open_position' },
-            ],
-            [
-              { text: '📜 Order Histories', callback_data: 'order_histories' },
-            ],
-          ],
-        },
-      };
-
-      this.bot.sendMessage(chatId, welcomeText, inlineKeyboard);
+      this.bot.sendMessage(chatId, welcomeText);
     });
 
     // Xử lý khi user click vào nút inline keyboard
@@ -71,8 +59,7 @@ export class TelegramService implements OnModuleInit {
   }
 
   private handleAccountInfo(chatId: number | string) {
-    const mock = `📊 *Account Info*\nBalance: 10,000 USD\nEquity: 10,100 USD\nMargin: 250 USD`;
-    this.bot.sendMessage(chatId, mock, { parse_mode: 'Markdown' });
+
   }
 
   private handleOpenPositions(chatId: number | string) {
@@ -87,5 +74,71 @@ export class TelegramService implements OnModuleInit {
 
   sendMessage(chatId: number | string, text: string) {
     return this.bot.sendMessage(chatId, text);
+  }
+  sendOpenTradeNotification(chatIds: number[], order: any) {
+    const {
+      comment,
+      symbol,
+      type,
+      volume,
+      price_open,
+      price_current,
+      profit,
+      magic,
+      sl,
+      tp,
+      time,
+    } = order;
+
+    const typeText = type === 0 ? '🟢 Buy' : '🔴 Sell';
+    const date = new Date(time * 1000).toLocaleString('vi-VN');
+
+    const message =
+      `📥 *Lệnh mới được mở!*\n\n` +
+      `• ${typeText} ${symbol}\n` +
+      `• Khối lượng: *${volume} lot*\n` +
+      `• Giá mở cửa: *${price_open}*\n` +
+      `• Giá hiện tại: *${price_current}*\n` +
+      `• Lợi nhuận tạm tính: *${profit >= 0 ? '+' : ''}${profit.toFixed(2)} USD*\n` +
+      `• Magic: ${magic}\n` +
+      `• SL / TP: ${sl || '-'} / ${tp || '-'}\n` +
+      `• Thời gian mở: ${date}\n` +
+      `• Ghi chú: \`${comment}\``;
+
+    chatIds.forEach((id) => {
+      this.sendMessage(id, message);
+    });
+  }
+  sendClosedTradeNotification(chatIds: number[], order: any) {
+    const {
+      symbol,
+      type,
+      volume,
+      price,
+      profit,
+      magic,
+      ticket,
+      time,
+      comment,
+    } = order;
+
+    const typeText = type === 0 ? '🟢 Buy' : '🔴 Sell';
+    const date = new Date(time * 1000).toLocaleString('vi-VN');
+
+    const message =
+      `📤 *Lệnh đã đóng!*\n\n` +
+      `• ${typeText} ${symbol}\n` +
+      `• Khối lượng: *${volume} lot*\n` +
+      `• Giá đóng: *${price}*\n` +
+      `• Lợi nhuận: *${profit >= 0 ? '+' : ''}${profit.toFixed(2)} USD*\n` +
+      `• Ticket: ${ticket}\n` +
+      `• Magic: ${magic}\n` +
+      `• Thời gian đóng: ${date}\n` +
+      (comment ? `• Ghi chú: \`${comment}\`\n` : '');
+
+    chatIds.forEach((chatId) => {
+      this.sendMessage(chatId, message);
+    });
+    return true;
   }
 }

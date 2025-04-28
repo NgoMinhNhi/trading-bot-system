@@ -5,16 +5,24 @@ import { IsNotEmpty, IsOptional } from 'class-validator';
 export class ApiRequestDto {
   @ApiProperty({
     description: 'API endpoint path',
-    example: 'users',
+    example: 'account',
   })
   @IsNotEmpty()
   endpoint: string;
 
   @ApiProperty({
     description: 'Query parameters',
-    example: { limit: 10, page: 1 },
+    example: {
+      login: 1,
+      password: 'password',
+      server: 'server',
+    },
     required: false,
   })
   @IsOptional()
-  params?: Record<string, any>;
+  params: {
+    login: string;
+    password: string;
+    server: string;
+  };
 }
