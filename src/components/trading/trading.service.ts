@@ -58,12 +58,16 @@ export class TradingService {
   async findByTicket(ticket: number): Promise<Order | null> {
     return this.orderModel.findOne({ ticket }).exec();
   }
+
+  async findByOrderId(orderId: string): Promise<Order | null> {
+    return this.orderModel.findOne({ order: orderId }).exec();
+  }
   async findOrdersByConditions(conditions: any): Promise<Order[] | []> {
     return this.orderModel.find(conditions).exec();
   }
 
-  async updateOrder(ticket: number, data: any): Promise<any> {
-    return this.orderModel.updateOne({ ticket }, data).exec();
+  async updateOrder(order: number, data: any): Promise<any> {
+    return this.orderModel.updateOne({ order }, data).exec();
   }
   async createMt5Account(
     accountData: Partial<Mt5Account>,
@@ -101,7 +105,7 @@ export class TradingService {
         });
         if (data?.open_positions) {
           for (const order of data.open_positions) {
-            const checkedOrder = await this.findByTicket(order.ticket);
+            const checkedOrder = await this.findByOrderId(order.order);
             if (!checkedOrder) {
               await this.createOrder({
                 ...order,
@@ -119,13 +123,13 @@ export class TradingService {
         // const openingOrders = await this.findOrdersByConditions({
         //   status: OrderStatus.OPENING,
         // });
-        const closedOrders = data?.closed_deals;
+        const closedOrders = data?.closed_deals?.filter(order => order?.order !== order?.position_id);
         await Promise.all(
           closedOrders?.map(async (order) => {
-            if (order?.profit === 0) {
+            if (order?.order !== order?.position_id) {
               return;
             }
-            const checkedOrder = await this.findByTicket(order.ticket);
+            const checkedOrder = await this.findByOrderId(order.order);
             if (!checkedOrder) {
               if (account?.sendNotify) {
                 this.telegramService.sendClosedTradeNotification(
@@ -147,7 +151,7 @@ export class TradingService {
                   order,
                 );
               }
-              return await this.updateOrder(order.ticket, {
+              return await this.updateOrder(order.order, {
                 ...order,
                 status: OrderStatus.CLOSED,
               });
