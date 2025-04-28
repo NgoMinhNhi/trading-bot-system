@@ -30,7 +30,7 @@ def get_mt5_orders():
 
     # Lịch sử lệnh đã đóng 7 ngày gần nhất
     now = datetime.now()
-    history = mt5.history_deals_get(now - timedelta(days=7), now)
+    history = mt5.history_orders_get(now - timedelta(days=7), now)
     raw_history = [d._asdict() for d in history] if history else []
 
     mt5.shutdown()

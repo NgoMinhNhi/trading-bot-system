@@ -15,7 +15,7 @@ export class SchedulerService {
     private readonly tradingService: TradingService,
   ) {}
 
-  @Cron('0 */2 * * * *') // Runs every 5 minutes
+  @Cron('0 * * * * *') // Runs every 5 minutes
   async handleCron() {
     this.logger.debug('Running scheduled task every 5 minutes');
 

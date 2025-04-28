@@ -130,17 +130,13 @@ export class TradingService {
                   order,
                 );
               }
-              await this.createOrder({
+              return await this.createOrder({
                 ...order,
                 accountId: account._id,
                 status: OrderStatus.CLOSED,
               });
             }
             if (checkedOrder?.status !== OrderStatus.CLOSED) {
-              await this.updateOrder(order.ticket, {
-                ...order,
-                status: OrderStatus.CLOSED,
-              });
               //Todo: Send notification to Telegram
               if (account?.sendNotify) {
                 this.telegramService.sendClosedTradeNotification(
@@ -148,6 +144,10 @@ export class TradingService {
                   order,
                 );
               }
+              return await this.updateOrder(order.ticket, {
+                ...order,
+                status: OrderStatus.CLOSED,
+              });
             }
           }),
         );

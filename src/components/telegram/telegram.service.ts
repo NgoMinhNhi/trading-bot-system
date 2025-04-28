@@ -73,7 +73,12 @@ export class TelegramService implements OnModuleInit {
   }
 
   sendMessage(chatId: number | string, text: string) {
-    return this.bot.sendMessage(chatId, text);
+    try {
+      return this.bot.sendMessage(chatId, text);
+    } catch (error) {
+      console.log('ChatId: ', chatId);
+      this.logger.error(error);
+    }
   }
   sendOpenTradeNotification(chatIds: number[], order: any) {
     const {
@@ -122,6 +127,7 @@ export class TelegramService implements OnModuleInit {
       comment,
     } = order;
 
+    console.log('sendClosedTradeNotification ===> ', order);
     const typeText = type === 0 ? '🟢 Buy' : '🔴 Sell';
     const date = new Date(time * 1000).toLocaleString('vi-VN');
 
