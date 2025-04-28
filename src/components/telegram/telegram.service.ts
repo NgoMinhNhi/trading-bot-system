@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import * as TelegramBot from 'node-telegram-bot-api';
 import { ConfigService } from '@nestjs/config';
+import { sleep } from '../../utils/timeout';
 
 @Injectable()
 export class TelegramService implements OnModuleInit {
@@ -23,7 +24,6 @@ export class TelegramService implements OnModuleInit {
     // Xử lý lệnh /start với inline keyboard
     this.bot.onText(/\/start/, (msg) => {
       const chatId = msg.chat.id;
-      console.log('chatId ', chatId);
       const name = msg.from?.first_name || 'bạn';
 
       const welcomeText = `👋 Chào mừng ${name} đến với bot NestJS!\nBạn có thể chọn một trong các chức năng dưới đây:`;
@@ -72,14 +72,19 @@ export class TelegramService implements OnModuleInit {
     this.bot.sendMessage(chatId, mock, { parse_mode: 'Markdown' });
   }
 
-  sendMessage(chatId: number | string, text: string) {
+  async sendMessage(chatId: number | string, text: string) {
     try {
-      return this.bot.sendMessage(chatId, text);
-    } catch (error) {
-      console.log('ChatId: ', chatId);
-      this.logger.error(error);
+      return await this.bot.sendMessage(chatId, text);
+    } catch (error: any) {
+      if (error.response?.statusCode === 429) {
+        const retryAfter = error.response.body?.parameters?.retry_after;
+        console.error(`⏳ Too Many Requests! Retry after ${retryAfter || 'unknown'} seconds.`);
+      } else {
+        console.error('🚨 Unexpected error while sending message.');
+      }
     }
   }
+
   sendOpenTradeNotification(chatIds: number[], order: any) {
     const {
       comment,
@@ -89,7 +94,6 @@ export class TelegramService implements OnModuleInit {
       price_open,
       price_current,
       profit,
-      magic,
       sl,
       tp,
       time,
@@ -105,13 +109,13 @@ export class TelegramService implements OnModuleInit {
       `• Giá mở cửa: *${price_open}*\n` +
       `• Giá hiện tại: *${price_current}*\n` +
       `• Lợi nhuận tạm tính: *${profit >= 0 ? '+' : ''}${profit.toFixed(2)} USD*\n` +
-      `• Magic: ${magic}\n` +
       `• SL / TP: ${sl || '-'} / ${tp || '-'}\n` +
       `• Thời gian mở: ${date}\n` +
       `• Ghi chú: \`${comment}\``;
 
-    chatIds.forEach((id) => {
-      this.sendMessage(id, message);
+    chatIds.forEach(async (id) => {
+      await this.sendMessage(id, message);
+      await sleep(1000);
     });
   }
   sendClosedTradeNotification(chatIds: number[], order: any) {
@@ -119,32 +123,34 @@ export class TelegramService implements OnModuleInit {
       symbol,
       type,
       volume,
-      price,
+      close_price,
       profit,
-      magic,
       ticket,
-      time,
+      close_time,
       comment,
     } = order;
 
-    console.log('sendClosedTradeNotification ===> ', order);
-    const typeText = type === 0 ? '🟢 Buy' : '🔴 Sell';
-    const date = new Date(time * 1000).toLocaleString('vi-VN');
+    console.log('sendClosedTradeNotification ===> ');
+
+    const typeText = type !== 0 ? '🟢 Buy' : '🔴 Sell';
+    const date = new Date(close_time * 1000).toLocaleString('vi-VN');
 
     const message =
       `📤 *Lệnh đã đóng!*\n\n` +
       `• ${typeText} ${symbol}\n` +
       `• Khối lượng: *${volume} lot*\n` +
-      `• Giá đóng: *${price}*\n` +
+      `• Giá mở: *${order.open_price}*\n` +
+      `• Giá đóng: *${close_price}*\n` +
       `• Lợi nhuận: *${profit >= 0 ? '+' : ''}${profit.toFixed(2)} USD*\n` +
       `• Ticket: ${ticket}\n` +
-      `• Magic: ${magic}\n` +
       `• Thời gian đóng: ${date}\n` +
       (comment ? `• Ghi chú: \`${comment}\`\n` : '');
 
-    chatIds.forEach((chatId) => {
-      this.sendMessage(chatId, message);
+    chatIds.forEach(async(chatId) => {
+      await this.sendMessage(chatId, message);
+      await sleep(1000);
     });
+
     return true;
   }
 }

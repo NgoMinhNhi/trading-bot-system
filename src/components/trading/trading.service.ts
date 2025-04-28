@@ -10,6 +10,7 @@ import {
 } from './schemas/mt5-account.schema';
 import { ApiClientService } from '../api-client/api-client.service';
 import { TelegramService } from '../telegram/telegram.service';
+import { sleep } from '../../utils/timeout';
 
 @Injectable()
 export class TradingService {
@@ -120,64 +121,36 @@ export class TradingService {
             }
           }
         }
-        // const openingOrders = await this.findOrdersByConditions({
-        //   status: OrderStatus.OPENING,
-        // });
-        const closedOrders = data?.closed_deals?.filter(order => order?.order !== order?.position_id);
-        await Promise.all(
-          closedOrders?.map(async (order) => {
-            if (order?.order !== order?.position_id) {
-              return;
+        const closedOrders = data?.closed_deals;
+        for (const order of closedOrders) {
+          const checkedOrder = await this.findByOrderId(order.order);
+          if (!checkedOrder) {
+            if (account?.sendNotify) {
+              this.telegramService.sendClosedTradeNotification(
+                account.chatIds,
+                order,
+              );
             }
-            const checkedOrder = await this.findByOrderId(order.order);
-            if (!checkedOrder) {
-              if (account?.sendNotify) {
-                this.telegramService.sendClosedTradeNotification(
-                  account.chatIds,
-                  order,
-                );
-              }
-              return await this.createOrder({
-                ...order,
-                accountId: account._id,
-                status: OrderStatus.CLOSED,
-              });
+            await this.createOrder({
+              ...order,
+              accountId: account._id,
+              status: OrderStatus.CLOSED,
+            });
+          } else if (checkedOrder?.status !== OrderStatus.CLOSED) {
+            //Todo: Send notification to Telegram
+            if (account?.sendNotify) {
+              this.telegramService.sendClosedTradeNotification(
+                account.chatIds,
+                order,
+              );
             }
-            if (checkedOrder?.status !== OrderStatus.CLOSED) {
-              //Todo: Send notification to Telegram
-              if (account?.sendNotify) {
-                this.telegramService.sendClosedTradeNotification(
-                  account.chatIds,
-                  order,
-                );
-              }
-              return await this.updateOrder(order.order, {
-                ...order,
-                status: OrderStatus.CLOSED,
-              });
-            }
-          }),
-        );
-        // if (openingOrders?.length && closedOrders?.length) {
-        //   for (const order of openingOrders) {
-        //     const checkedOrder = closedOrders.find(
-        //       (closedOrder) => closedOrder.ticket === order.ticket,
-        //     );
-        //     if (checkedOrder) {
-        //       await this.updateOrder(order.ticket, {
-        //         status: OrderStatus.CLOSED,
-        //       });
-        //       //Todo: Send notification to Telegram
-        //       if (account?.sendNotify) {
-        //         this.telegramService.sendClosedTradeNotification(
-        //           account.chatIds,
-        //           order,
-        //         );
-        //       }
-        //     }
-        //   }
-        // }
-        // Process the result as needed
+            await this.updateOrder(order.order, {
+              ...order,
+              status: OrderStatus.CLOSED,
+            });
+          }
+          await sleep(1000);
+        }
         this.logger.log(`Fetched data for account ${account.login}`);
       } catch (error) {
         this.logger.error(
