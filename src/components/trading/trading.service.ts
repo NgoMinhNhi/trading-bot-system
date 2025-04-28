@@ -122,6 +122,9 @@ export class TradingService {
         const closedOrders = data?.closed_deals;
         await Promise.all(
           closedOrders?.map(async (order) => {
+            if (order?.profit === 0) {
+              return;
+            }
             const checkedOrder = await this.findByTicket(order.ticket);
             if (!checkedOrder) {
               if (account?.sendNotify) {
