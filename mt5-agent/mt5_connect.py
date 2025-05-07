@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 import MetaTrader5 as mt5
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 import datetime as dt
 
@@ -11,7 +11,7 @@ MT5_PATH = "C:/Program Files/DBG Markets MetaTrader 5 - 2/terminal64.exe"
 if not mt5.initialize(path=MT5_PATH):
     raise Exception(f"Không khởi động được MT5: {mt5.last_error()}")
 
-# === CACHE tài khoản login trong 6h ===
+# === CACHE tài khoản login trong 12h ===
 MT5_ACCOUNTS = {}  # { login: {"server": ..., "password": ..., "last_active": datetime} }
 MT5_CACHE_DURATION = timedelta(hours=12)
 
@@ -23,10 +23,10 @@ def get_mt5_credentials(data):
 
 def ensure_mt5_logged_in(login, password, server):
     global MT5_ACCOUNTS
-    current_time = datetime.utcnow()
+    current_time = datetime.now(timezone.utc)
 
     # Tự khởi động lại nếu MT5 mất kết nối
-    if mt5.connection_status().name != 'CONNECTED':
+    if mt5.terminal_info() is None:
         mt5.initialize(path=MT5_PATH)
 
     account = MT5_ACCOUNTS.get(login)
@@ -89,8 +89,8 @@ def get_complete_deals(now):
                 "type": close_deal['type'],
                 "reason": close_deal['reason'],
                 "status": "CLOSED",
-                "createdAt": dt.datetime.isoformat(),
-                "updatedAt": dt.datetime.isoformat(),
+                "createdAt": dt.datetime.now(dt.timezone.utc).isoformat(),
+                "updatedAt": dt.datetime.now(dt.timezone.utc).isoformat()
             })
 
     return complete_positions
@@ -190,7 +190,7 @@ def get_mt5_all():
 def health_check():
     return jsonify({
         "status": "ok",
-        "mt5_connection": mt5.connection_status().name,
+        "mt5_connection": "CONNECTED" if mt5.terminal_info() else "DISCONNECTED",
         "cached_accounts": list(MT5_ACCOUNTS.keys()),
         "cache_size": len(MT5_ACCOUNTS)
     })
