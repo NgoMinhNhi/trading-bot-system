@@ -159,4 +159,75 @@ export class TradingService {
       }
     }
   }
+  async checkOpenPositions() {
+    console.log('Fetching open positions...');
+    const accounts = await this.findActiveAccounts();
+    for (const account of accounts) {
+      try {
+        const data = await this.apiClientService.fetchData('open_positions', {
+          login: account.login,
+          password: account.password,
+          server: account.server,
+        });
+
+        const openOrders = data?.open_positions;
+        if (!openOrders) continue;
+
+        for (const order of openOrders) {
+          const exists = await this.findByOrderId(order.order);
+          if (!exists) {
+            await this.createOrder({
+              ...order,
+              accountId: account._id,
+              status: OrderStatus.OPENING,
+            });
+            this.telegramService.sendOpenTradeNotification(account.chatIds, order);
+          }
+        }
+      } catch (error) {
+        this.logger.error(`checkOpenPositions error (login ${account.login}): ${error.message}`);
+      }
+    }
+  }
+  async checkClosedOrders() {
+    console.log('Fetching closed orders...');
+    const accounts = await this.findActiveAccounts();
+    for (const account of accounts) {
+      try {
+        const data = await this.apiClientService.fetchData('closed_deals', {
+          login: account.login,
+          password: account.password,
+          server: account.server,
+        });
+
+        const closedOrders = data?.closed_deals;
+        if (!closedOrders) continue;
+
+        for (const order of closedOrders) {
+          const existing = await this.findByOrderId(order.order);
+          if (!existing) {
+            if (account?.sendNotify) {
+              this.telegramService.sendClosedTradeNotification(account.chatIds, order);
+            }
+            await this.createOrder({
+              ...order,
+              accountId: account._id,
+              status: OrderStatus.CLOSED,
+            });
+          } else if (existing.status !== OrderStatus.CLOSED) {
+            if (account?.sendNotify) {
+              this.telegramService.sendClosedTradeNotification(account.chatIds, order);
+            }
+            await this.updateOrder(order.order, {
+              ...order,
+              status: OrderStatus.CLOSED,
+            });
+          }
+          await sleep(1000);
+        }
+      } catch (error) {
+        this.logger.error(`checkClosedOrders error (login ${account.login}): ${error.message}`);
+      }
+    }
+  }
 }

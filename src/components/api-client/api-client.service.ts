@@ -29,6 +29,18 @@ export class ApiClientService {
             params.password,
             params.server,
           );
+        case 'open_positions':
+          return await this.getOpenOrders(
+            params.login,
+            params.password,
+            params.server,
+          );
+        case 'closed_deals':
+          return await this.getClosedOrders(
+            params.login,
+            params.password,
+            params.server,
+          );
         case 'all':
           return await this.getAllData(
             params.login,
@@ -62,6 +74,28 @@ export class ApiClientService {
     server: string,
   ): Promise<any> {
     return this.httpClientService.post(`${this.baseUrl}/mt5/orders`, {
+      login,
+      password,
+      server,
+    });
+  }
+  async getOpenOrders(
+    login: string,
+    password: string,
+    server: string,
+  ): Promise<any> {
+    return this.httpClientService.post(`${this.baseUrl}/mt5/open_positions`, {
+      login,
+      password,
+      server,
+    });
+  }
+  async getClosedOrders(
+    login: string,
+    password: string,
+    server: string,
+  ): Promise<any> {
+    return this.httpClientService.post(`${this.baseUrl}/mt5/closed_deals`, {
       login,
       password,
       server,

@@ -6,43 +6,69 @@ import datetime as dt
 
 app = Flask(__name__)
 
-# === CHỈ initialize 1 lần khi start server ===
+# === Chỉ khởi tạo 1 lần khi start server ===
 MT5_PATH = "C:/Program Files/DBG Markets MetaTrader 5 - 2/terminal64.exe"
 if not mt5.initialize(path=MT5_PATH):
     raise Exception(f"Không khởi động được MT5: {mt5.last_error()}")
 
+# === CACHE tài khoản login trong 6h ===
+MT5_ACCOUNTS = {}  # { login: {"server": ..., "password": ..., "last_active": datetime} }
+MT5_CACHE_DURATION = timedelta(hours=12)
 
-def connect_mt5(login, password, server):
-    """Đăng nhập vào tài khoản MT5"""
+def get_mt5_credentials(data):
+    try:
+        return int(data.get("login")), data.get("password"), data.get("server")
+    except:
+        return None, None, None
+
+def ensure_mt5_logged_in(login, password, server):
+    global MT5_ACCOUNTS
+    current_time = datetime.utcnow()
+
+    # Tự khởi động lại nếu MT5 mất kết nối
+    if mt5.connection_status().name != 'CONNECTED':
+        mt5.initialize(path=MT5_PATH)
+
+    account = MT5_ACCOUNTS.get(login)
+    if account:
+        expired = current_time - account["last_active"] > MT5_CACHE_DURATION
+        credentials_match = account["server"] == server and account["password"] == password
+
+        if not expired and credentials_match:
+            account["last_active"] = current_time
+            return True
+        else:
+            del MT5_ACCOUNTS[login]
+
     if not mt5.login(login=login, password=password, server=server):
         return False
+
+    MT5_ACCOUNTS[login] = {
+        "server": server,
+        "password": password,
+        "last_active": current_time
+    }
     return True
 
-
 def get_complete_deals(now):
-    """Lấy lịch sử deals hoàn chỉnh trong 7 ngày"""
-    history = mt5.history_deals_get(now - timedelta(days=7), now)
-
+    history = mt5.history_deals_get(now - timedelta(days=1), now)
     if not history:
         return []
 
     deals_by_position = defaultdict(dict)
-
     for deal in history:
         deal_dict = deal._asdict()
         pos_id = deal.position_id
         entry = deal.entry
-
-        if entry == 0:  # deal mở
+        if entry == 0:
             deals_by_position[pos_id]['open'] = deal_dict
-        elif entry == 1:  # deal đóng
+        elif entry == 1:
             deals_by_position[pos_id]['close'] = deal_dict
 
     complete_positions = []
     for pos_id, deals in deals_by_position.items():
         open_deal = deals.get('open')
         close_deal = deals.get('close')
-
         if open_deal and close_deal:
             complete_positions.append({
                 "position_id": pos_id,
@@ -63,31 +89,23 @@ def get_complete_deals(now):
                 "type": close_deal['type'],
                 "reason": close_deal['reason'],
                 "status": "CLOSED",
-                "createdAt": dt.datetime.utcnow().isoformat(),
-                "updatedAt": dt.datetime.utcnow().isoformat(),
+                "createdAt": dt.datetime.isoformat(),
+                "updatedAt": dt.datetime.isoformat(),
             })
 
     return complete_positions
 
-
 @app.route('/mt5/orders', methods=['POST'])
 def get_mt5_orders():
-    """API lấy lệnh đang mở + lệnh đã đóng"""
-    data = request.json
-    login = data.get('login')
-    password = data.get('password')
-    server = data.get('server')
-
+    login, password, server = get_mt5_credentials(request.json)
     if not all([login, password, server]):
         return jsonify({"error": "Thiếu thông tin đăng nhập"}), 400
-
-    if not connect_mt5(int(login), password, server):
+    if not ensure_mt5_logged_in(login, password, server):
         return jsonify({"error": f"Đăng nhập MT5 thất bại: {mt5.last_error()}"}), 500
 
     positions = mt5.positions_get()
     raw_positions = [p._asdict() for p in positions] if positions else []
-
-    now = datetime.now()
+    now = datetime.now() + timedelta(days=1)
     raw_history = get_complete_deals(now)
 
     return jsonify({
@@ -96,19 +114,44 @@ def get_mt5_orders():
         "closed_deals": raw_history
     })
 
+@app.route('/mt5/open_positions', methods=['POST'])
+def get_open_positions():
+    login, password, server = get_mt5_credentials(request.json)
+    if not all([login, password, server]):
+        return jsonify({"error": "Thiếu thông tin đăng nhập"}), 400
+    if not ensure_mt5_logged_in(login, password, server):
+        return jsonify({"error": f"Đăng nhập MT5 thất bại: {mt5.last_error()}"}), 500
+
+    positions = mt5.positions_get()
+    raw_positions = [p._asdict() for p in positions] if positions else []
+
+    return jsonify({
+        "status": "success",
+        "open_positions": raw_positions
+    })
+
+@app.route('/mt5/closed_deals', methods=['POST'])
+def get_closed_deals():
+    login, password, server = get_mt5_credentials(request.json)
+    if not all([login, password, server]):
+        return jsonify({"error": "Thiếu thông tin đăng nhập"}), 400
+    if not ensure_mt5_logged_in(login, password, server):
+        return jsonify({"error": f"Đăng nhập MT5 thất bại: {mt5.last_error()}"}), 500
+
+    now = datetime.now() + timedelta(days=1)
+    closed = get_complete_deals(now)
+
+    return jsonify({
+        "status": "success",
+        "closed_deals": closed
+    })
 
 @app.route('/mt5/account', methods=['POST'])
 def get_mt5_account():
-    """API lấy thông tin tài khoản"""
-    data = request.json
-    login = data.get('login')
-    password = data.get('password')
-    server = data.get('server')
-
+    login, password, server = get_mt5_credentials(request.json)
     if not all([login, password, server]):
         return jsonify({"error": "Thiếu thông tin đăng nhập"}), 400
-
-    if not connect_mt5(int(login), password, server):
+    if not ensure_mt5_logged_in(login, password, server):
         return jsonify({"error": f"Đăng nhập MT5 thất bại: {mt5.last_error()}"}), 500
 
     info = mt5.account_info()
@@ -119,19 +162,12 @@ def get_mt5_account():
         "account": account_data
     })
 
-
 @app.route('/mt5/all', methods=['POST'])
 def get_mt5_all():
-    """API lấy đầy đủ account + open positions + closed deals"""
-    data = request.json
-    login = data.get('login')
-    password = data.get('password')
-    server = data.get('server')
-
+    login, password, server = get_mt5_credentials(request.json)
     if not all([login, password, server]):
         return jsonify({"error": "Thiếu thông tin đăng nhập"}), 400
-
-    if not connect_mt5(int(login), password, server):
+    if not ensure_mt5_logged_in(login, password, server):
         return jsonify({"error": f"Đăng nhập MT5 thất bại: {mt5.last_error()}"}), 500
 
     info = mt5.account_info()
@@ -150,6 +186,14 @@ def get_mt5_all():
         "closed_deals": raw_history
     })
 
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({
+        "status": "ok",
+        "mt5_connection": mt5.connection_status().name,
+        "cached_accounts": list(MT5_ACCOUNTS.keys()),
+        "cache_size": len(MT5_ACCOUNTS)
+    })
 
 if __name__ == '__main__':
     app.run(port=5000)
