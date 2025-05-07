@@ -67,6 +67,12 @@ export class Order {
   @Prop({ required: true })
   volume: number;
 
+  @Prop()
+  open_time: number;
+
+  @Prop()
+  close_time: number;
+
   @Prop({
     type: String,
     enum: OrderStatus,

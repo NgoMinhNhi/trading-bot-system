@@ -29,9 +29,9 @@ export class SchedulerService {
     }
   }
 
-  @Cron('*/10 * * * * *') // every 10 seconds
+  @Cron('*/15 * * * * *') // every 15 seconds
   async checkClosedOrdersJob() {
-    this.logger.debug('⏱️ Running closed orders job (10s)');
+    this.logger.debug('⏱️ Running closed orders job (15s)');
     try {
       await this.tradingService.checkClosedOrders();
     } catch (error) {
