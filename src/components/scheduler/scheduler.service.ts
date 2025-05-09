@@ -8,20 +8,9 @@ export class SchedulerService {
   private readonly logger = new Logger(SchedulerService.name);
 
   constructor(private readonly tradingService: TradingService) {}
-  // @Cron('0 * * * * *') // Runs every 1 minutes
-  // async handleCron() {
-  //   this.logger.debug('Running scheduled task every 1 minutes');
-  //
-  //   try {
-  //     await this.tradingService.handleCronJob();
-  //   } catch (error) {
-  //     this.logger.error(`Scheduled task failed: ${error}`);
-  //   }
-  // }
 
-  @Cron('*/5 * * * * *') // every 5 seconds
+  @Cron('*/10 * * * * *') // every 5 seconds
   async checkOpenOrdersJob() {
-    this.logger.debug('⏱️ Running open orders job (5s)');
     try {
       await this.tradingService.checkOpenPositions();
     } catch (error) {
@@ -29,9 +18,8 @@ export class SchedulerService {
     }
   }
 
-  @Cron('*/15 * * * * *') // every 15 seconds
+  @Cron('*/30 * * * * *') // every 15 seconds
   async checkClosedOrdersJob() {
-    this.logger.debug('⏱️ Running closed orders job (15s)');
     try {
       await this.tradingService.checkClosedOrders();
     } catch (error) {

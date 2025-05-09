@@ -20,7 +20,10 @@ export class HttpClientService {
     config?: AxiosRequestConfig,
   ): Promise<T> {
     const response: AxiosResponse<T> = await firstValueFrom(
-      this.httpService.post<T>(url, data, config),
+      this.httpService.post<T>(url, data, {
+        timeout: 60000,
+        ...config,
+      }),
     );
     return response.data;
   }

@@ -51,7 +51,7 @@ def ensure_mt5_logged_in(login, password, server):
     return True
 
 def get_complete_deals(now):
-    history = mt5.history_deals_get(now - timedelta(days=1), now)
+    history = mt5.history_deals_get(now - timedelta(days=3), now)
     if not history:
         return []
 

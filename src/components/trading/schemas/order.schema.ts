@@ -13,7 +13,7 @@ export enum OrderStatus {
 }
 @Schema({ timestamps: true })
 export class Order {
-  @Prop({ required: true, unique: true })
+  @Prop()
   ticket: number;
 
   @Prop()
