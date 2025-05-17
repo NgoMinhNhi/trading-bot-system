@@ -3,18 +3,19 @@ import MetaTrader5 as mt5
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 import datetime as dt
+from functools import wraps
 
 app = Flask(__name__)
 
-# === Chỉ khởi tạo 1 lần khi start server ===
+# === Cấu hình MT5 ===
 MT5_PATH = "C:/Program Files/DBG Markets MetaTrader 5 - 2/terminal64.exe"
 if not mt5.initialize(path=MT5_PATH):
     raise Exception(f"Không khởi động được MT5: {mt5.last_error()}")
 
-# === CACHE tài khoản login trong 12h ===
-MT5_ACCOUNTS = {}  # { login: {"server": ..., "password": ..., "last_active": datetime} }
-MT5_CACHE_DURATION = timedelta(hours=12)
+# === Theo dõi phiên đăng nhập hiện tại ===
+CURRENT_LOGIN = None
 
+# === Helpers ===
 def get_mt5_credentials(data):
     try:
         return int(data.get("login")), data.get("password"), data.get("server")
@@ -22,33 +23,35 @@ def get_mt5_credentials(data):
         return None, None, None
 
 def ensure_mt5_logged_in(login, password, server):
-    global MT5_ACCOUNTS
-    current_time = datetime.now(timezone.utc)
+    global CURRENT_LOGIN
 
-    # Tự khởi động lại nếu MT5 mất kết nối
-    if mt5.terminal_info() is None:
+    info = mt5.account_info()
+    if info and info.login == login:
+        # Đang đăng nhập đúng user
+        return True
+
+    # Re-init nếu mất kết nối
+    if not mt5.terminal_info():
         mt5.initialize(path=MT5_PATH)
 
-    account = MT5_ACCOUNTS.get(login)
-    if account:
-        expired = current_time - account["last_active"] > MT5_CACHE_DURATION
-        credentials_match = account["server"] == server and account["password"] == password
-
-        if not expired and credentials_match:
-            account["last_active"] = current_time
-            return True
-        else:
-            del MT5_ACCOUNTS[login]
-
     if not mt5.login(login=login, password=password, server=server):
+        print("❌ Login thất bại:", mt5.last_error())
         return False
 
-    MT5_ACCOUNTS[login] = {
-        "server": server,
-        "password": password,
-        "last_active": current_time
-    }
+    CURRENT_LOGIN = login
     return True
+
+def login_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        data = request.json or {}
+        login, password, server = get_mt5_credentials(data)
+        if not all([login, password, server]):
+            return jsonify({"error": "Thiếu thông tin đăng nhập"}), 400
+        if not ensure_mt5_logged_in(login, password, server):
+            return jsonify({"error": f"Đăng nhập MT5 thất bại: {mt5.last_error()}"}), 500
+        return f(*args, **kwargs)
+    return wrapper
 
 def get_complete_deals(now):
     history = mt5.history_deals_get(now - timedelta(days=3), now)
@@ -95,7 +98,10 @@ def get_complete_deals(now):
 
     return complete_positions
 
+# === API Endpoints ===
+
 @app.route('/mt5/orders', methods=['POST'])
+@login_required
 def get_mt5_orders():
     login, password, server = get_mt5_credentials(request.json)
     if not all([login, password, server]):
@@ -115,6 +121,7 @@ def get_mt5_orders():
     })
 
 @app.route('/mt5/open_positions', methods=['POST'])
+@login_required
 def get_open_positions():
     login, password, server = get_mt5_credentials(request.json)
     if not all([login, password, server]):
@@ -131,6 +138,7 @@ def get_open_positions():
     })
 
 @app.route('/mt5/closed_deals', methods=['POST'])
+@login_required
 def get_closed_deals():
     login, password, server = get_mt5_credentials(request.json)
     if not all([login, password, server]):
@@ -147,6 +155,7 @@ def get_closed_deals():
     })
 
 @app.route('/mt5/account', methods=['POST'])
+@login_required
 def get_mt5_account():
     login, password, server = get_mt5_credentials(request.json)
     if not all([login, password, server]):
@@ -163,6 +172,7 @@ def get_mt5_account():
     })
 
 @app.route('/mt5/all', methods=['POST'])
+@login_required
 def get_mt5_all():
     login, password, server = get_mt5_credentials(request.json)
     if not all([login, password, server]):
@@ -187,6 +197,7 @@ def get_mt5_all():
     })
 
 @app.route('/health', methods=['GET'])
+@login_required
 def health_check():
     return jsonify({
         "status": "ok",
