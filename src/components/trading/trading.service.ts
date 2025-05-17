@@ -72,10 +72,12 @@ export class TradingService {
           password: account.password,
           server: account.server,
         });
+        console.log(data);
         const openOrders = data?.open_positions;
         if (!openOrders) continue;
 
         for (const order of openOrders) {
+          order.time = order?.time - 3 * 60 * 60 || new Date().getTime();
           const exists = await this.findByTicket(order.ticket);
           if (!exists) {
             await this.createOrder({
@@ -105,6 +107,12 @@ export class TradingService {
           password: account.password,
           server: account.server,
         });
+        console.log({
+          login: account.login,
+          password: account.password,
+          server: account.server,
+        });
+        console.log(JSON.stringify(data));
         const closedOrders = data?.closed_deals;
         if (!closedOrders) continue;
 

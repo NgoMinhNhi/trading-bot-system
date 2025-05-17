@@ -2,6 +2,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { TradingService } from '../trading/trading.service';
+import { sleep } from '../../utils/timeout';
 
 @Injectable()
 export class SchedulerService {
@@ -9,18 +10,11 @@ export class SchedulerService {
 
   constructor(private readonly tradingService: TradingService) {}
 
-  @Cron('*/10 * * * * *') // every 5 seconds
-  async checkOpenOrdersJob() {
-    try {
-      await this.tradingService.checkOpenPositions();
-    } catch (error) {
-      this.logger.error(`Open order job failed: ${error.message}`);
-    }
-  }
-
-  @Cron('*/30 * * * * *') // every 15 seconds
+  @Cron('0 * * * * *')
   async checkClosedOrdersJob() {
     try {
+      await this.tradingService.checkOpenPositions();
+      await sleep(1000);
       await this.tradingService.checkClosedOrders();
     } catch (error) {
       this.logger.error(`Closed order job failed: ${error.message}`);
