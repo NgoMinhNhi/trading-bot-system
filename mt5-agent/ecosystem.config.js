@@ -5,7 +5,7 @@ module.exports = {
       script: "mt5_connect.py",
       interpreter: "python", // hoặc "python" tùy hệ thống
       args: "",
-      cwd: "./mt5-agent", // thư mục chứa file mt5_connect.py
+      // cwd: "./mt5-agent", // thư mục chứa file mt5_connect.py
       watch: false,
       autorestart: true,
       max_restarts: 10,

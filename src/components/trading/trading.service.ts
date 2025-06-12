@@ -132,11 +132,11 @@ export class TradingService {
               order,
             );
           }
-          // await this.createOrder({
-          //   ...order,
-          //   accountId: account._id,
-          //   status: OrderStatus.CLOSED,
-          // });
+          await this.createOrder({
+            ...order,
+            accountId: account._id,
+            status: OrderStatus.CLOSED,
+          });
         } else if (existing.status !== OrderStatus.CLOSED) {
           if (account?.sendNotify) {
             this.telegramService.sendClosedTradeNotification(

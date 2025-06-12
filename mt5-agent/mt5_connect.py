@@ -9,7 +9,7 @@ app = Flask(__name__)
 
 # === Cấu hình MT5 ===
 MT5_PATH = "C:/Program Files/DBG Markets MetaTrader 5 - 2/terminal64.exe"
-if not mt5.initialize(path=MT5_PATH):
+if not mt5.initialize():
     raise Exception(f"Không khởi động được MT5: {mt5.last_error()}")
 
 # === Theo dõi phiên đăng nhập hiện tại ===
@@ -32,7 +32,7 @@ def ensure_mt5_logged_in(login, password, server):
 
     # Re-init nếu mất kết nối
     if not mt5.terminal_info():
-        mt5.initialize(path=MT5_PATH)
+        mt5.initialize()
 
     if not mt5.login(login=login, password=password, server=server):
         print("❌ Login thất bại:", mt5.last_error())
@@ -54,7 +54,7 @@ def login_required(f):
     return wrapper
 
 def get_complete_deals(now):
-    history = mt5.history_deals_get(now - timedelta(days=3), now)
+    history = mt5.history_deals_get(now - timedelta(days=4), now)
     if not history:
         return []
 
