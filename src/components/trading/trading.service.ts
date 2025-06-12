@@ -62,34 +62,12 @@ export class TradingService {
   async findActiveAccounts(): Promise<Mt5AccountDocument[]> {
     return this.mt5AccountModel.find({ status: AccountStatus.ACTIVE }).exec();
   }
-
-  async checkOpenPositions() {
+  async checkStates() {
     const accounts = await this.findActiveAccounts();
     for (const account of accounts) {
       try {
-        const data = await this.apiClientService.fetchData('open_positions', {
-          login: account.login,
-          password: account.password,
-          server: account.server,
-        });
-        const openOrders = data?.open_positions;
-        if (!openOrders) continue;
-
-        for (const order of openOrders) {
-          order.time = order?.time - 3 * 60 * 60 || new Date().getTime();
-          const exists = await this.findByTicket(order.ticket);
-          if (!exists) {
-            await this.createOrder({
-              ...order,
-              accountId: account._id,
-              status: OrderStatus.OPENING,
-            });
-            this.telegramService.sendOpenTradeNotification(
-              account.chatIds,
-              order,
-            );
-          }
-        }
+        this.checkStateByAccount(account).then();
+        await sleep(7000);
       } catch (error) {
         this.logger.error(
           `checkOpenPositions error (login ${account.login}): ${error.message}`,
@@ -97,53 +75,84 @@ export class TradingService {
       }
     }
   }
-  async checkClosedOrders() {
-    const accounts = await this.findActiveAccounts();
-    for (const account of accounts) {
-      try {
-        const data = await this.apiClientService.fetchData('closed_deals', {
-          login: account.login,
-          password: account.password,
-          server: account.server,
-        });
-        const closedOrders = data?.closed_deals;
-        if (!closedOrders) continue;
 
-        for (const order of closedOrders) {
-          order.close_time =
-            order?.close_time - 3 * 60 * 60 || new Date().getTime();
-          const existing = await this.findByOrderId(order.order);
-          if (!existing) {
-            if (account?.sendNotify) {
-              this.telegramService.sendClosedTradeNotification(
-                account.chatIds,
-                order,
-              );
-            }
-            await this.createOrder({
-              ...order,
-              accountId: account._id,
-              status: OrderStatus.CLOSED,
-            });
-          } else if (existing.status !== OrderStatus.CLOSED) {
-            if (account?.sendNotify) {
-              this.telegramService.sendClosedTradeNotification(
-                account.chatIds,
-                order,
-              );
-            }
-            await this.updateOrder(order.order, {
-              ...order,
-              status: OrderStatus.CLOSED,
-            });
-          }
-          await sleep(1000);
-        }
-      } catch (error) {
-        this.logger.error(
-          `checkClosedOrders error (login ${account.login}): ${error.message}`,
-        );
+  async checkStateByAccount(account: any) {
+    try {
+      const data = await this.apiClientService.fetchData('all', {
+        login: account.login,
+        password: account.password,
+        server: account.server,
+      });
+      await this.checkOpenPositions(data?.open_positions, account);
+      await this.checkClosedOrders(data?.closed_deals, account);
+    } catch (error) {
+      this.logger.error(
+        `checkOpenPositions error (login ${account.login}): ${error.message}`,
+      );
+    }
+  }
+
+  async checkOpenPositions(openOrders: any, account: any) {
+    try {
+      if (!openOrders) {
+        return;
       }
+      for (const order of openOrders) {
+        order.time = order?.time - 3 * 60 * 60 || new Date().getTime();
+        const exists = await this.findByTicket(order.ticket);
+        if (!exists) {
+          await this.createOrder({
+            ...order,
+            accountId: account._id,
+            status: OrderStatus.OPENING,
+          });
+          this.telegramService.sendOpenTradeNotification(
+            account.chatIds,
+            order,
+          );
+        }
+      }
+    } catch (error) {
+      this.logger.error(`checkOpenPositions error: ${error.message}`);
+    }
+  }
+  async checkClosedOrders(closedOrders: any, account: any) {
+    try {
+      if (!closedOrders) {
+        return;
+      }
+      for (const order of closedOrders) {
+        order.close_time =
+          order?.close_time - 3 * 60 * 60 || new Date().getTime();
+        const existing = await this.findByOrderId(order.order);
+        if (!existing) {
+          if (account?.sendNotify) {
+            this.telegramService.sendClosedTradeNotification(
+              account.chatIds,
+              order,
+            );
+          }
+          // await this.createOrder({
+          //   ...order,
+          //   accountId: account._id,
+          //   status: OrderStatus.CLOSED,
+          // });
+        } else if (existing.status !== OrderStatus.CLOSED) {
+          if (account?.sendNotify) {
+            this.telegramService.sendClosedTradeNotification(
+              account.chatIds,
+              order,
+            );
+          }
+          await this.updateOrder(order.order, {
+            ...order,
+            status: OrderStatus.CLOSED,
+          });
+        }
+        await sleep(1000);
+      }
+    } catch (error) {
+      this.logger.error(`checkClosedOrders error: ${error.message}`);
     }
   }
 }

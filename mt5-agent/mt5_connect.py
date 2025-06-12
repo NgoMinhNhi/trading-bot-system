@@ -180,21 +180,20 @@ def get_mt5_all():
     if not ensure_mt5_logged_in(login, password, server):
         return jsonify({"error": f"Đăng nhập MT5 thất bại: {mt5.last_error()}"}), 500
 
-    info = mt5.account_info()
-    account_data = info._asdict() if info else {}
-
+    # Open positions
     positions = mt5.positions_get()
     raw_positions = [p._asdict() for p in positions] if positions else []
 
-    now = datetime.now()
-    raw_history = get_complete_deals(now)
+    # Closed deals
+    now = datetime.now() + timedelta(days=1)
+    closed = get_complete_deals(now)
 
     return jsonify({
         "status": "success",
-        "account": account_data,
         "open_positions": raw_positions,
-        "closed_deals": raw_history
+        "closed_deals": closed
     })
+
 
 @app.route('/health', methods=['GET'])
 @login_required
