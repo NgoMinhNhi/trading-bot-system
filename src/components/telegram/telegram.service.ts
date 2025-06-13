@@ -7,6 +7,7 @@ import { Order, OrderDocument, OrderStatus } from '../trading/schemas/order.sche
 import { Model } from 'mongoose';
 import { Mt5Account, Mt5AccountDocument } from '../trading/schemas/mt5-account.schema';
 import mongoose from 'mongoose';
+import { SocksProxyAgent } from 'socks-proxy-agent';
 
 @Injectable()
 export class TelegramService implements OnModuleInit {
@@ -21,7 +22,7 @@ export class TelegramService implements OnModuleInit {
   ) {}
 
   async getClosedProfitWithinDuration(accountId: string, duration: number): Promise<number> {
-    const fromTimestampSec = Math.floor((Date.now() - duration) / 1000); // ms → seconds
+    const fromTimestampSec = Math.floor((Date.now() - duration) / 1000);
 
     const result = await this.orderModel.aggregate([
       {
@@ -44,15 +45,27 @@ export class TelegramService implements OnModuleInit {
 
   onModuleInit() {
     const token = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
-
     if (!token) {
       this.logger.error('TELEGRAM_BOT_TOKEN is not defined');
       throw new Error('TELEGRAM_BOT_TOKEN is required');
     }
 
-    this.bot = new TelegramBot(token, { polling: true });
+    // 🛡️ Lấy thông tin proxy từ ENV
+    const proxyHost = this.configService.get<string>('PROXY_HOST');
+    const proxyPort = this.configService.get<string>('PROXY_PORT');
+    const proxyUsername = encodeURIComponent(this.configService.get<string>('PROXY_USERNAME') || '');
+    const proxyPassword = encodeURIComponent(this.configService.get<string>('PROXY_PASSWORD') || '');
 
-    // Lệnh khởi động
+    const proxyUrl = `socks5://${proxyUsername}:${proxyPassword}@${proxyHost}:${proxyPort}`;
+    const agent = new SocksProxyAgent(proxyUrl);
+
+    // ⚙️ Khởi tạo bot với proxy
+    this.bot = new TelegramBot(token, {
+      polling: true,
+      ...(proxyHost && { request: { agent } as any }),
+    });
+
+    // Xử lý lệnh /start
     this.bot.onText(/\/start/, (msg) => {
       const chatId = msg.chat.id;
       const name = msg.from?.first_name || 'bạn';
@@ -60,7 +73,7 @@ export class TelegramService implements OnModuleInit {
       this.bot.sendMessage(chatId, welcomeText);
     });
 
-    // Xử lý callback query nếu có
+    // Xử lý callback query
     this.bot.on('callback_query', (query) => {
       const chatId = query.message?.chat.id;
       const data = query.data;
@@ -85,7 +98,7 @@ export class TelegramService implements OnModuleInit {
       this.bot.answerCallbackQuery(query.id);
     });
 
-    // ✅ Xử lý /profits [n][m]
+    // Lệnh /profits
     this.bot.onText(/\/profits\s*(.*)/, async (msg, match) => {
       if (!match || !match[0]) {
         await this.sendMessage(msg.chat.id, '⚠️ Cú pháp không hợp lệ. Ví dụ: `/profits 7d`', {
@@ -212,10 +225,10 @@ export class TelegramService implements OnModuleInit {
       `• Khối lượng: *${volume} lot*\n` +
       `• Giá mở: *${order.open_price}*\n` +
       `• Giá đóng: *${close_price}*\n` +
-      `• Lợi nhuận: *${profit >= 0 ? '+' : ''}${profit.toFixed(2)} USD*\n` +
-      `• Ticket: ${ticket}\n` +
-      `• Thời gian đóng: ${date}\n` +
-      (comment ? `• Ghi chú: \`${comment}\`\n` : '');
+      `• Lợi nhuận: *${profit >= 0 ? '+' : ''}${profit.toFixed(2)} USD*\n `+
+    `• Ticket: ${ticket}\n` +
+    `• Thời gian đóng: ${date}\n` +
+    (comment ? `• Ghi chú: \`${comment}\`\n` : '');
 
     chatIds.forEach(async (chatId) => {
       await this.sendMessage(chatId, message, { parse_mode: 'Markdown' });
