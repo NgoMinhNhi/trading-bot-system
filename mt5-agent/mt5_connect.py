@@ -8,7 +8,7 @@ from functools import wraps
 app = Flask(__name__)
 
 # === Cấu hình MT5 ===
-MT5_PATH = "C:/Program Files/DBG Markets MetaTrader 5 - 2/terminal64.exe"
+MT5_PATH = "C:/Program Files/MT5AgentNotify\MetaTrader 5/terminal64.exe"
 if not mt5.initialize(path=MT5_PATH):
     raise Exception(f"Không khởi động được MT5: {mt5.last_error()}")
 
@@ -54,7 +54,7 @@ def login_required(f):
     return wrapper
 
 def get_complete_deals(now):
-    history = mt5.history_deals_get(now - timedelta(days=4), now)
+    history = mt5.history_deals_get(now - timedelta(days=7), now)
     if not history:
         return []
 

@@ -2,7 +2,7 @@
 /dist
 /node_modules
 /build
-
+/mt5-agent/venv
 # Logs
 logs
 *.log
