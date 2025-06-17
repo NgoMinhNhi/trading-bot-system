@@ -54,7 +54,7 @@ def login_required(f):
     return wrapper
 
 def get_complete_deals(now):
-    history = mt5.history_deals_get(now - timedelta(days=7), now)
+    history = mt5.history_deals_get(now - timedelta(days=4), now)
     if not history:
         return []
 

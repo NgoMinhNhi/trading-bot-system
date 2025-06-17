@@ -9,12 +9,12 @@ export class SchedulerService {
 
   constructor(private readonly tradingService: TradingService) {}
 
-  // @Cron('0 * * * * *')
-  // async checkClosedOrdersJob() {
-  //   try {
-  //     await this.tradingService.checkStates();
-  //   } catch (error) {
-  //     this.logger.error(`Closed order job failed: ${error.message}`);
-  //   }
-  // }
+  @Cron('0 */2 * * * *')
+  async checkClosedOrdersJob() {
+    try {
+      await this.tradingService.checkStates();
+    } catch (error) {
+      this.logger.error(`Closed order job failed: ${error.message}`);
+    }
+  }
 }

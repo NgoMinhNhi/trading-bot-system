@@ -26,6 +26,9 @@ export class Mt5Account {
   })
   sendNotify: boolean;
 
+  @Prop()
+  ignoreOpenDeal: boolean;
+
   @Prop({
     type: String,
     enum: AccountStatus,

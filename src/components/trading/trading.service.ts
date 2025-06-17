@@ -62,16 +62,12 @@ export class TradingService {
   async findActiveAccounts(): Promise<Mt5AccountDocument[]> {
     return this.mt5AccountModel.find({ status: AccountStatus.ACTIVE }).exec();
   }
-  onModuleInit() {
-    this.checkStates().then();
-  }
   async checkStates() {
-    console.log('checkStates');
     const accounts = await this.findActiveAccounts();
     for (const account of accounts) {
       try {
         this.checkStateByAccount(account).then();
-        await sleep(7000);
+        await sleep(15000);
       } catch (error) {
         this.logger.error(
           `checkOpenPositions error (login ${account.login}): ${error.message}`,
@@ -87,8 +83,9 @@ export class TradingService {
         password: account.password,
         server: account.server,
       });
-      // await this.checkOpenPositions(data?.open_positions, account);
-      console.log('data?.closed_deals data?', data?.closed_deals?.length);
+      if (!account?.ignoreOpenDeal) {
+        await this.checkOpenPositions(data?.open_positions, account);
+      }
       await this.checkClosedOrders(data?.closed_deals, account);
     } catch (error) {
       this.logger.error(
