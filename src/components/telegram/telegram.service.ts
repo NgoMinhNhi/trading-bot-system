@@ -162,7 +162,7 @@ export class TelegramService implements OnModuleInit {
           `💰 *Tổng lợi nhuận đã đóng (${timeLabel})*\n\n` +
           `• Tài khoản: *${account.login}*${account?.name ? ` - *${account.name}*` : ''}\n` +
           `• Server: ${account.server}\n` +
-          `• Lợi nhuận: *${profit >= 0 ? '+' : ''}${(profit / (account?.currency === 'USC' ? 100 : 1)).toFixed(2)} ${account?.currency || 'USD'}*`;
+          `• Lợi nhuận: *${profit >= 0 ? '+' : ''}${profit.toFixed(2)} ${account?.currency || 'USD'}*`;
 
         await this.sendMessage(chatId, message, { parse_mode: 'Markdown' });
         await sleep(1000);
