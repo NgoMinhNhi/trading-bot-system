@@ -3,9 +3,16 @@ import * as TelegramBot from 'node-telegram-bot-api';
 import { ConfigService } from '@nestjs/config';
 import { sleep } from '../../utils/timeout';
 import { InjectModel } from '@nestjs/mongoose';
-import { Order, OrderDocument, OrderStatus } from '../trading/schemas/order.schema';
+import {
+  Order,
+  OrderDocument,
+  OrderStatus,
+} from '../trading/schemas/order.schema';
 import { Model } from 'mongoose';
-import { Mt5Account, Mt5AccountDocument } from '../trading/schemas/mt5-account.schema';
+import {
+  Mt5Account,
+  Mt5AccountDocument,
+} from '../trading/schemas/mt5-account.schema';
 import mongoose from 'mongoose';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 
@@ -21,7 +28,10 @@ export class TelegramService implements OnModuleInit {
     private mt5AccountModel: Model<Mt5AccountDocument>,
   ) {}
 
-  async getClosedProfitWithinDuration(accountId: string, duration: number): Promise<number> {
+  async getClosedProfitWithinDuration(
+    accountId: string,
+    duration: number,
+  ): Promise<number> {
     const fromTimestampSec = Math.floor((Date.now() - duration) / 1000);
 
     const result = await this.orderModel.aggregate([
@@ -53,8 +63,12 @@ export class TelegramService implements OnModuleInit {
     // 🛡️ Lấy thông tin proxy từ ENV
     const proxyHost = this.configService.get<string>('PROXY_HOST');
     const proxyPort = this.configService.get<string>('PROXY_PORT');
-    const proxyUsername = encodeURIComponent(this.configService.get<string>('PROXY_USERNAME') || '');
-    const proxyPassword = encodeURIComponent(this.configService.get<string>('PROXY_PASSWORD') || '');
+    const proxyUsername = encodeURIComponent(
+      this.configService.get<string>('PROXY_USERNAME') || '',
+    );
+    const proxyPassword = encodeURIComponent(
+      this.configService.get<string>('PROXY_PASSWORD') || '',
+    );
 
     const proxyUrl = `socks5://${proxyUsername}:${proxyPassword}@${proxyHost}:${proxyPort}`;
     const agent = new SocksProxyAgent(proxyUrl);
@@ -69,7 +83,7 @@ export class TelegramService implements OnModuleInit {
     this.bot.onText(/\/start/, (msg) => {
       const chatId = msg.chat.id;
       const name = msg.from?.first_name || 'bạn';
-      const welcomeText = `👋 Chào mừng ${name} đến với bot NestJS!\nBạn có thể chọn một trong các chức năng dưới đây:`;
+      const welcomeText = `👋 Chào mừng ${name} đến với bot MetaTrader 5!\nChúc bạn có thật nhiều lợi nhuận!`;
       this.bot.sendMessage(chatId, welcomeText);
     });
 
@@ -101,9 +115,13 @@ export class TelegramService implements OnModuleInit {
     // Lệnh /profits
     this.bot.onText(/\/profits\s*(.*)/, async (msg, match) => {
       if (!match || !match[0]) {
-        await this.sendMessage(msg.chat.id, '⚠️ Cú pháp không hợp lệ. Ví dụ: `/profits 7d`', {
-          parse_mode: 'Markdown',
-        });
+        await this.sendMessage(
+          msg.chat.id,
+          '⚠️ Cú pháp không hợp lệ. Ví dụ: `/profits 7d`',
+          {
+            parse_mode: 'Markdown',
+          },
+        );
         return;
       }
 
@@ -112,29 +130,39 @@ export class TelegramService implements OnModuleInit {
       const duration = this.parseDuration(inputText);
 
       if (!duration) {
-        await this.sendMessage(chatId, '❌ Không hiểu yêu cầu. Ví dụ đúng: `/profits 7d`, `/profits 24h`', {
-          parse_mode: 'Markdown',
-        });
+        await this.sendMessage(
+          chatId,
+          '❌ Không hiểu yêu cầu. Ví dụ đúng: `/profits 7d`, `/profits 24h`',
+          {
+            parse_mode: 'Markdown',
+          },
+        );
         return;
       }
 
       const accounts = await this.mt5AccountModel.find({ chatIds: chatId });
 
       if (!accounts.length) {
-        await this.sendMessage(chatId, '⚠️ Không tìm thấy tài khoản nào liên kết với Telegram này.');
+        await this.sendMessage(
+          chatId,
+          '⚠️ Không tìm thấy tài khoản nào liên kết với Telegram này.',
+        );
         return;
       }
 
       for (const account of accounts) {
         const accountId = (account._id as mongoose.Types.ObjectId).toString();
-        const profit = await this.getClosedProfitWithinDuration(accountId, duration);
+        const profit = await this.getClosedProfitWithinDuration(
+          accountId,
+          duration,
+        );
         const timeLabel = inputText.split(' ')[1] || 'khoảng thời gian';
 
         const message =
           `💰 *Tổng lợi nhuận đã đóng (${timeLabel})*\n\n` +
-          `• Tài khoản: *${account.login}*\n` +
+          `• Tài khoản: *${account.login}*${account?.name ? ` - *${account.name}*` : ''}\n` +
           `• Server: ${account.server}\n` +
-          `• Lợi nhuận: *${profit >= 0 ? '+' : ''}${profit.toFixed(2)} USD*`;
+          `• Lợi nhuận: *${profit >= 0 ? '+' : ''}${(profit / (account?.currency === 'USC' ? 100 : 1)).toFixed(2)} ${account?.currency || 'USD'}*`;
 
         await this.sendMessage(chatId, message, { parse_mode: 'Markdown' });
         await sleep(1000);
@@ -171,13 +199,19 @@ export class TelegramService implements OnModuleInit {
     this.bot.sendMessage(chatId, mock, { parse_mode: 'Markdown' });
   }
 
-  async sendMessage(chatId: number | string, text: string, options?: TelegramBot.SendMessageOptions) {
+  async sendMessage(
+    chatId: number | string,
+    text: string,
+    options?: TelegramBot.SendMessageOptions,
+  ) {
     try {
       return await this.bot.sendMessage(chatId, text, options);
     } catch (error: any) {
       if (error.response?.statusCode === 429) {
         const retryAfter = error.response.body?.parameters?.retry_after;
-        console.error(`⏳ Too Many Requests! Retry after ${retryAfter || 'unknown'} seconds.`);
+        console.error(
+          `⏳ Too Many Requests! Retry after ${retryAfter || 'unknown'} seconds.`,
+        );
       } else {
         console.error('🚨 Unexpected error while sending message.', error);
       }
@@ -185,7 +219,8 @@ export class TelegramService implements OnModuleInit {
   }
 
   sendOpenTradeNotification(chatIds: number[], order: any) {
-    const { symbol, type, volume, price_open, price_current, profit, time } = order;
+    const { symbol, type, volume, price_open, price_current, profit, time } =
+      order;
     const typeText = type === 0 ? '🟢 Buy' : '🔴 Sell';
     const date = new Date(time * 1000).toLocaleString('vi-VN');
 
@@ -225,10 +260,10 @@ export class TelegramService implements OnModuleInit {
       `• Khối lượng: *${volume} lot*\n` +
       `• Giá mở: *${order.open_price}*\n` +
       `• Giá đóng: *${close_price}*\n` +
-      `• Lợi nhuận: *${profit >= 0 ? '+' : ''}${profit.toFixed(2)} USD*\n `+
-    `• Ticket: ${ticket}\n` +
-    `• Thời gian đóng: ${date}\n` +
-    (comment ? `• Ghi chú: \`${comment}\`\n` : '');
+      `• Lợi nhuận: *${profit >= 0 ? '+' : ''}${profit.toFixed(2)} USD*\n ` +
+      `• Ticket: ${ticket}\n` +
+      `• Thời gian đóng: ${date}\n` +
+      (comment ? `• Ghi chú: \`${comment}\`\n` : '');
 
     chatIds.forEach(async (chatId) => {
       await this.sendMessage(chatId, message, { parse_mode: 'Markdown' });

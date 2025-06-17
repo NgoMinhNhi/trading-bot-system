@@ -12,6 +12,12 @@ export class Mt5Account {
   @Prop({ required: true, unique: true })
   login: number;
 
+  @Prop()
+  name: string;
+
+  @Prop()
+  currency: string;
+
   @Prop({ required: true })
   password: string;
 
