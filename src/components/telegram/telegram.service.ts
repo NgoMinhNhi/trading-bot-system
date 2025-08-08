@@ -61,22 +61,22 @@ export class TelegramService implements OnModuleInit {
     }
 
     // 🛡️ Lấy thông tin proxy từ ENV
-    const proxyHost = this.configService.get<string>('PROXY_HOST');
-    const proxyPort = this.configService.get<string>('PROXY_PORT');
-    const proxyUsername = encodeURIComponent(
-      this.configService.get<string>('PROXY_USERNAME') || '',
-    );
-    const proxyPassword = encodeURIComponent(
-      this.configService.get<string>('PROXY_PASSWORD') || '',
-    );
+    // const proxyHost = this.configService.get<string>('PROXY_HOST');
+    // const proxyPort = this.configService.get<string>('PROXY_PORT');
+    // const proxyUsername = encodeURIComponent(
+    //   this.configService.get<string>('PROXY_USERNAME') || '',
+    // );
+    // const proxyPassword = encodeURIComponent(
+    //   this.configService.get<string>('PROXY_PASSWORD') || '',
+    // );
 
-    const proxyUrl = `socks5://${proxyUsername}:${proxyPassword}@${proxyHost}:${proxyPort}`;
-    const agent = new SocksProxyAgent(proxyUrl);
+    // const proxyUrl = `socks5://${proxyUsername}:${proxyPassword}@${proxyHost}:${proxyPort}`;
+    // const agent = new SocksProxyAgent(proxyUrl);
 
     // ⚙️ Khởi tạo bot với proxy
     this.bot = new TelegramBot(token, {
       polling: true,
-      ...(proxyHost && { request: { agent } as any }),
+      // ...(proxyHost && { request: { agent } as any }),
     });
 
     // Xử lý lệnh /start
