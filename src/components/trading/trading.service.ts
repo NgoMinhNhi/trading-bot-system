@@ -109,7 +109,7 @@ export class TradingService {
             status: OrderStatus.OPENING,
           });
           this.telegramService.sendOpenTradeNotification(
-            account.chatIds,
+            account,
             order,
           );
         }
@@ -130,7 +130,7 @@ export class TradingService {
         if (!existing) {
           if (account?.sendNotify) {
             this.telegramService.sendClosedTradeNotification(
-              account.chatIds,
+              account,
               order,
             );
           }
@@ -142,7 +142,7 @@ export class TradingService {
         } else if (existing.status !== OrderStatus.CLOSED) {
           if (account?.sendNotify) {
             this.telegramService.sendClosedTradeNotification(
-              account.chatIds,
+              account,
               order,
             );
           }
