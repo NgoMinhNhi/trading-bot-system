@@ -131,7 +131,7 @@ export class TelegramService implements OnModuleInit {
     });
 
     // Lệnh /profits
-    this.bot.onText(/\/profits\s*(.*)/, async (msg, match) => {
+    this.bot.onText(/^\/profits\s+(.*)$/, async (msg, match) => {
       if (!match || !match[0]) {
         await this.sendMessage(
           msg.chat.id,
@@ -196,7 +196,7 @@ export class TelegramService implements OnModuleInit {
       }
     });
 
-    this.bot.onText(/\/pnl/, async (msg) => {
+    this.bot.onText(/^\/pnl$/, async (msg) => {
       console.log('Received /pnl command');
       const chatId = msg.chat.id;
 
@@ -248,7 +248,7 @@ export class TelegramService implements OnModuleInit {
       }
     });
 
-    this.bot.onText(/\/pnl_slot/, async (msg) => {
+    this.bot.onText(/^\/pnl_slot$/, async (msg) => {
       const chatId = msg.chat.id;
       const accounts = await this.mt5AccountModel
         .find({ chatIds: chatId })
@@ -273,7 +273,7 @@ export class TelegramService implements OnModuleInit {
         await sleep(1000);
       }
     });
-    this.bot.onText(/\/profits_slot\s*(.*)/, async (msg, match) => {
+    this.bot.onText(/^\/profits_slot\s+(.*)$/, async (msg, match) => {
       const chatId = msg.chat.id;
 
       if (!match || !match[0]) {
@@ -330,8 +330,9 @@ export class TelegramService implements OnModuleInit {
     });
   }
 
-  private parseDuration(text: string): number | null {
-    const match = text.trim().match(/^\/profits\s+(\d+)([dhmM])$/);
+  private parseDuration(text: string, command: string): number | null {
+    const regex = new RegExp(`^\\/${command}\\s+(\\d+)([dhmM])$`);
+    const match = text.trim().match(regex);
     if (!match) return null;
 
     const value = parseInt(match[1], 10);
