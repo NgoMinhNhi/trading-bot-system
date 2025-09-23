@@ -15,6 +15,8 @@ import {
 } from '../trading/schemas/mt5-account.schema';
 import mongoose from 'mongoose';
 import { SocksProxyAgent } from 'socks-proxy-agent';
+import { roundTo } from '../../utils/number';
+import { formatTime } from '../../utils/time';
 
 @Injectable()
 export class TelegramService implements OnModuleInit {
@@ -34,6 +36,30 @@ export class TelegramService implements OnModuleInit {
   ): Promise<number> {
     const fromTimestampSec = Math.floor((Date.now() - duration) / 1000);
 
+    const result = await this.orderModel.aggregate([
+      {
+        $match: {
+          accountId: new mongoose.Types.ObjectId(accountId),
+          status: OrderStatus.CLOSED,
+          close_time: { $gte: fromTimestampSec },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalProfit: { $sum: '$profit' },
+        },
+      },
+    ]);
+
+    return result[0]?.totalProfit || 0;
+  }
+
+  async getClosedProfitAfterTime(
+    accountId: string,
+    time: number,
+  ): Promise<number> {
+    const fromTimestampSec = Math.floor(time / 1000);
     const result = await this.orderModel.aggregate([
       {
         $match: {
@@ -87,13 +113,6 @@ export class TelegramService implements OnModuleInit {
       this.bot.sendMessage(chatId, welcomeText);
     });
 
-    // Xử lý callback query
-    this.bot.on('callback_query', (query) => {
-      const chatId = query.message?.chat.id;
-      if (!chatId) return;
-      this.bot.answerCallbackQuery(query.id);
-    });
-
     // Lệnh /profits
     this.bot.onText(/\/profits\s*(.*)/, async (msg, match) => {
       if (!match || !match[0]) {
@@ -122,7 +141,9 @@ export class TelegramService implements OnModuleInit {
         return;
       }
 
-      const accounts = await this.mt5AccountModel.find({ chatIds: chatId });
+      const accounts = await this.mt5AccountModel
+        .find({ chatIds: chatId })
+        .lean();
 
       if (!accounts.length) {
         await this.sendMessage(
@@ -138,13 +159,71 @@ export class TelegramService implements OnModuleInit {
           accountId,
           duration,
         );
+        let profitRate: any = null;
+        if (account?.balanceInit) {
+          profitRate = roundTo((profit / account.balanceInit) * 100, 2);
+        }
         const timeLabel = inputText.split(' ')[1] || 'khoảng thời gian';
 
-        const message =
-          `💰 *Tổng lợi nhuận đã đóng (${timeLabel})*\n\n` +
+        let message =
+          `💰 *Tổng lợi nhuận đã đóng (${timeLabel})*\n` +
           `• Tài khoản: *${account.login}*${account?.name ? ` - *${account.name}*` : ''}\n` +
           `• Server: ${account.server}\n` +
           `• Lợi nhuận: *${profit >= 0 ? '+' : ''}${profit.toFixed(2)} ${account?.currency || 'USD'}*`;
+        if (profitRate !== null) {
+          message += `(${profitRate}%)`;
+        }
+
+        await this.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+        await sleep(1000);
+      }
+    });
+
+    this.bot.onText(/\/pnl/, async (msg) => {
+      const chatId = msg.chat.id;
+
+      const accounts = await this.mt5AccountModel
+        .find({ chatIds: chatId })
+        .lean();
+
+      if (!accounts.length) {
+        await this.sendMessage(
+          chatId,
+          '⚠️ Không tìm thấy tài khoản nào liên kết với Telegram này.',
+        );
+        return;
+      }
+
+      for (const account of accounts) {
+        const accountId = (account._id as mongoose.Types.ObjectId).toString();
+
+        // Nếu chưa có lastCashout thì mặc định là 2025-01-01
+        let lastCashout = account.lastCashout;
+        if (!lastCashout) {
+          lastCashout = new Date('2025-01-01').getTime();
+        }
+
+        // Tính tổng lợi nhuận từ lastCashout
+        const profit = await this.getClosedProfitAfterTime(
+          accountId,
+          lastCashout,
+        );
+
+        // Tính tỉ lệ lợi nhuận
+        let profitRate: any = null;
+        if (account?.balanceInit) {
+          profitRate = roundTo((profit / account.balanceInit) * 100, 2);
+        }
+        const lastCashoutLabel = account?.lastCashout
+          ? formatTime(account.lastCashout, 'YYYY-MM-DD HH:mm:ss')
+          : 'Chưa có';
+        const message =
+          `📊 *Báo cáo lợi nhuận từ lần cashout gần nhất*\n\n` +
+          `👤 *Tài khoản:* ${account.login}${account?.name ? ` - ${account.name}` : ''}\n` +
+          `• Server: ${account.server}\n` +
+          `• Lợi nhuận: *${profit >= 0 ? '+' : ''}${profit.toFixed(2)} ${account?.currency || 'USD'}*\n` +
+          (profitRate !== null ? `• Tỉ lệ: *${profitRate}%*\n` : '') +
+          `• Lần cashout gần nhất: ${lastCashoutLabel}`;
 
         await this.sendMessage(chatId, message, { parse_mode: 'Markdown' });
         await sleep(1000);

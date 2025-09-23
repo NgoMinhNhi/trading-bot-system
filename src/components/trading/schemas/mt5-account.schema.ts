@@ -35,6 +35,12 @@ export class Mt5Account {
   @Prop()
   ignoreOpenDeal: boolean;
 
+  @Prop()
+  balanceInit: number;
+
+  @Prop()
+  lastCashout: number;
+
   @Prop({
     type: String,
     enum: AccountStatus,
