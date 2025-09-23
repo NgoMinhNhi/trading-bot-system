@@ -42,6 +42,17 @@ export class Mt5Account {
   lastCashout: number;
 
   @Prop({
+    type: [
+      {
+        name: String,  // Tên người
+        slots: Number, // Số slot người này giữ
+      },
+    ],
+    default: [],
+  })
+  slotHolders: { name: string; slots: number }[];
+
+  @Prop({
     type: String,
     enum: AccountStatus,
     default: AccountStatus.ACTIVE,

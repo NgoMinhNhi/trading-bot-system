@@ -79,6 +79,36 @@ export class TelegramService implements OnModuleInit {
     return result[0]?.totalProfit || 0;
   }
 
+  private buildProfitSharingMessage(
+    account: Mt5Account,
+    totalProfit: number,
+    title: string,
+  ): string {
+    const totalSlots = account.slotHolders.reduce(
+      (sum, holder) => sum + holder.slots,
+      0,
+    );
+
+    let message =
+      `${title}\n\n` +
+      `👤 *Tài khoản:* ${account.login}${account?.name ? ` - ${account.name}` : ''}\n` +
+      `• Server: ${account.server}\n` +
+      `• Tổng lợi nhuận: *${totalProfit >= 0 ? '+' : ''}${totalProfit.toFixed(
+        2,
+      )} ${account?.currency || 'USD'}*\n` +
+      `• Tổng slot: ${totalSlots}\n\n` +
+      `📑 *Chi tiết phân chia:*\n`;
+
+    for (const holder of account.slotHolders) {
+      const share = (holder.slots / totalSlots) * totalProfit;
+      message += `- ${holder.name}: ${share >= 0 ? '+' : ''}${share.toFixed(
+        2,
+      )} (${holder.slots} slot)\n`;
+    }
+
+    return message;
+  }
+
   onModuleInit() {
     const token = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
     if (!token) {
@@ -212,6 +242,87 @@ export class TelegramService implements OnModuleInit {
           `• Lợi nhuận: *${profit >= 0 ? '+' : ''}${profit.toFixed(2)} ${account?.currency || 'USD'}*\n` +
           (profitRate !== null ? `• Tỉ lệ: *${profitRate}%*\n` : '') +
           `• Lần cashout gần nhất: ${lastCashoutLabel}`;
+
+        await this.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+        await sleep(1000);
+      }
+    });
+
+    this.bot.onText(/\/pnl_slot/, async (msg) => {
+      const chatId = msg.chat.id;
+      const accounts = await this.mt5AccountModel
+        .find({ chatIds: chatId })
+        .lean();
+
+      for (const account of accounts) {
+        const lastCashout =
+          account.lastCashout || new Date('2025-01-01').getTime();
+        const accountId = (account._id as mongoose.Types.ObjectId).toString();
+        const profit = await this.getClosedProfitAfterTime(
+          accountId,
+          lastCashout,
+        );
+
+        const message = this.buildProfitSharingMessage(
+          account,
+          profit,
+          `📊 *Báo cáo PnL từ lần cashout gần nhất (chia theo slot)*`,
+        );
+
+        await this.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+        await sleep(1000);
+      }
+    });
+    this.bot.onText(/\/profits_slot\s*(.*)/, async (msg, match) => {
+      const chatId = msg.chat.id;
+
+      if (!match || !match[0]) {
+        await this.sendMessage(
+          chatId,
+          '⚠️ Cú pháp không hợp lệ. Ví dụ: `/pnl_xd 7d`',
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+
+      const inputText = match[0];
+      const duration = this.parseDuration(inputText);
+
+      if (!duration) {
+        await this.sendMessage(
+          chatId,
+          '❌ Không hiểu yêu cầu. Ví dụ đúng: `/pnl_xd 7d`, `/pnl_xd 24h`',
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+
+      const accounts = await this.mt5AccountModel
+        .find({ chatIds: chatId })
+        .lean();
+
+      if (!accounts.length) {
+        await this.sendMessage(
+          chatId,
+          '⚠️ Không tìm thấy tài khoản nào liên kết với Telegram này.',
+        );
+        return;
+      }
+
+      for (const account of accounts) {
+        const accountId = (account._id as mongoose.Types.ObjectId).toString();
+
+        // Tính tổng lợi nhuận theo duration
+        const profit = await this.getClosedProfitWithinDuration(
+          accountId,
+          duration,
+        );
+
+        const message = this.buildProfitSharingMessage(
+          account,
+          profit,
+          `📊 *Báo cáo PnL (${inputText}) - chia theo slot*`,
+        );
 
         await this.sendMessage(chatId, message, { parse_mode: 'Markdown' });
         await sleep(1000);
