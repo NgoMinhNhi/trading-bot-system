@@ -145,7 +145,7 @@ export class TelegramService implements OnModuleInit {
 
       const chatId = msg.chat.id;
       const inputText = match[0];
-      const duration = this.parseDuration(inputText);
+      const duration = this.parseDuration(match[0], "profits");
 
       if (!duration) {
         await this.sendMessage(
@@ -286,7 +286,7 @@ export class TelegramService implements OnModuleInit {
       }
 
       const inputText = match[0];
-      const duration = this.parseDuration(inputText);
+      const duration = this.parseDuration(match[0], "profits_slot");
 
       if (!duration) {
         await this.sendMessage(
