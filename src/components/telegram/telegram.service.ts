@@ -86,19 +86,6 @@ export class TelegramService implements OnModuleInit {
       throw new Error('TELEGRAM_BOT_TOKEN is required');
     }
 
-    // 🛡️ Lấy thông tin proxy từ ENV
-    // const proxyHost = this.configService.get<string>('PROXY_HOST');
-    // const proxyPort = this.configService.get<string>('PROXY_PORT');
-    // const proxyUsername = encodeURIComponent(
-    //   this.configService.get<string>('PROXY_USERNAME') || '',
-    // );
-    // const proxyPassword = encodeURIComponent(
-    //   this.configService.get<string>('PROXY_PASSWORD') || '',
-    // );
-
-    // const proxyUrl = `socks5://${proxyUsername}:${proxyPassword}@${proxyHost}:${proxyPort}`;
-    // const agent = new SocksProxyAgent(proxyUrl);
-
     // ⚙️ Khởi tạo bot với proxy
     this.bot = new TelegramBot(token, {
       polling: true,
@@ -180,6 +167,7 @@ export class TelegramService implements OnModuleInit {
     });
 
     this.bot.onText(/\/pnl/, async (msg) => {
+      console.log('Received /pnl command');
       const chatId = msg.chat.id;
 
       const accounts = await this.mt5AccountModel
