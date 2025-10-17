@@ -84,7 +84,7 @@ def get_mt5_allV2():
     raw_positions = [p._asdict() for p in positions] if positions else []
 
     # === Lấy lịch sử đóng lệnh ===
-    now = datetime.now(timezone.utc) + timedelta(hours=20)
+    now = datetime.now(timezone.utc) + timedelta(hours=24)
     closed = get_complete_deals(now)
 
     return jsonify({

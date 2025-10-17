@@ -9,7 +9,8 @@ export class SchedulerService {
 
   constructor(private readonly tradingService: TradingService) {}
 
-  @Cron('0 * * * * *')
+  // @Cron('0 * * * * *')
+  @Cron('0 */5 * * * *')
   async checkClosedOrdersJob() {
     try {
       await this.tradingService.checkStates();

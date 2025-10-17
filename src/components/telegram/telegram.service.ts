@@ -18,17 +18,56 @@ import { SocksProxyAgent } from 'socks-proxy-agent';
 import { roundTo } from '../../utils/number';
 import { formatTime } from '../../utils/time';
 
+interface QueueItem {
+  chatId: number | string;
+  text: string;
+  options?: TelegramBot.SendMessageOptions;
+}
+
 @Injectable()
 export class TelegramService implements OnModuleInit {
   private bot: TelegramBot;
   private readonly logger = new Logger(TelegramService.name);
-
+  private messageQueue: QueueItem[] = [];
+  private isProcessingQueue = false;
   constructor(
     private configService: ConfigService,
     @InjectModel(Order.name) private orderModel: Model<OrderDocument>,
     @InjectModel(Mt5Account.name)
     private mt5AccountModel: Model<Mt5AccountDocument>,
   ) {}
+
+  private async processQueue() {
+    if (this.isProcessingQueue) return;
+    this.isProcessingQueue = true;
+
+    while (this.messageQueue.length > 0) {
+      const data = this.messageQueue.shift();
+      if (!data) {
+        continue;
+      }
+      const { chatId, text, options } = data;
+      try {
+        await this.bot.sendMessage(chatId, text, options);
+        this.logger.debug(`✅ Sent message to ${chatId}`);
+      } catch (error: any) {
+        if (error.response?.statusCode === 429) {
+          const retryAfter = error.response.body?.parameters?.retry_after || 5;
+          this.logger.warn(`⏳ Rate limited. Retry after ${retryAfter}s`);
+          await sleep(retryAfter * 1000);
+          // Requeue the message
+          this.messageQueue.unshift({ chatId, text, options });
+        } else {
+          this.logger.error(`🚨 Failed to send message to ${chatId}: ${error.message}`);
+        }
+      }
+
+      // ⏱ Delay 0.5 giây giữa mỗi message
+      await sleep(500);
+    }
+
+    this.isProcessingQueue = false;
+  }
 
   async getClosedProfitWithinDuration(
     accountId: string,
@@ -347,22 +386,17 @@ export class TelegramService implements OnModuleInit {
 
     return msPer[unit] ? value * msPer[unit] : null;
   }
-  async sendMessage(
+  sendMessage(
     chatId: number | string,
     text: string,
     options?: TelegramBot.SendMessageOptions,
   ) {
-    try {
-      return await this.bot.sendMessage(chatId, text, options);
-    } catch (error: any) {
-      if (error.response?.statusCode === 429) {
-        const retryAfter = error.response.body?.parameters?.retry_after;
-        console.error(
-          `⏳ Too Many Requests! Retry after ${retryAfter || 'unknown'} seconds.`,
-        );
-      } else {
-        console.error('🚨 Unexpected error while sending message.', error);
-      }
+    this.messageQueue.push({ chatId, text, options });
+    this.logger.debug(`📨 Queued message to ${chatId}. Queue length: ${this.messageQueue.length}`);
+
+    // Nếu worker chưa chạy thì kích hoạt
+    if (!this.isProcessingQueue) {
+      this.processQueue();
     }
   }
 
