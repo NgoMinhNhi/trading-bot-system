@@ -102,15 +102,7 @@ export class ApiClientService {
     });
   }
 
-  async getAllData(
-    login: string,
-    password: string,
-    server: string,
-  ): Promise<any> {
-    return this.httpClientService.post(`${this.baseUrl}/mt5/all`, {
-      login,
-      password,
-      server,
-    });
+  async getAllData(body: any): Promise<any> {
+    return this.httpClientService.post(`${this.baseUrl}/mt5/all-v2`, body);
   }
 }

@@ -58,6 +58,9 @@ export class Mt5Account {
     default: AccountStatus.ACTIVE,
   })
   status: AccountStatus;
+
+  @Prop()
+  mt5Path: string;
 }
 
 export type Mt5AccountDocument = Mt5Account & Document;

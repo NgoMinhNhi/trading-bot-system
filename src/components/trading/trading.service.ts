@@ -78,11 +78,14 @@ export class TradingService {
 
   async checkStateByAccount(account: any) {
     try {
-      const data = await this.apiClientService.fetchData('all', {
+      const data = await this.apiClientService.getAllData({
         login: account.login,
+        mt5Path: account.mt5Path,
         password: account.password,
         server: account.server,
       });
+      console.log('account ', account.login, ' account?.ignoreOpenDeal ', account?.ignoreOpenDeal?.length, data?.closed_deals?.length);
+      console.log(data?.account);
       if (!account?.ignoreOpenDeal) {
         await this.checkOpenPositions(data?.open_positions, account);
       }
