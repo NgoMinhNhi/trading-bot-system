@@ -67,7 +67,7 @@ export class TradingService {
     for (const account of accounts) {
       try {
         this.checkStateByAccount(account).then();
-        await sleep(15000);
+        await sleep(200);
       } catch (error) {
         this.logger.error(
           `checkOpenPositions error (login ${account.login}): ${error.message}`,
@@ -84,7 +84,7 @@ export class TradingService {
         password: account.password,
         server: account.server,
       });
-      console.log('account ', account.login, ' account?.ignoreOpenDeal ', account?.ignoreOpenDeal?.length, data?.closed_deals?.length);
+      console.log('account ', account.login, ' data?.open_positions ', data?.open_positions?.length, 'data?.closed_deals ', data?.closed_deals?.length);
       console.log(data?.account);
       if (!account?.ignoreOpenDeal) {
         await this.checkOpenPositions(data?.open_positions, account);
