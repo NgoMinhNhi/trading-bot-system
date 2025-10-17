@@ -41,12 +41,6 @@ export class ApiClientService {
             params.password,
             params.server,
           );
-        case 'all':
-          return await this.getAllData(
-            params.login,
-            params.password,
-            params.server,
-          );
         default:
           this.logger.error(`Invalid endpoint: ${endpoint}`);
           throw `Invalid endpoint: ${endpoint}`;
