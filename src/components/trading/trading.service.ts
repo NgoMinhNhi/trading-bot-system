@@ -84,8 +84,6 @@ export class TradingService {
         password: account.password,
         server: account.server,
       });
-      console.log('account ', account.login, ' data?.open_positions ', data?.open_positions?.length, 'data?.closed_deals ', data?.closed_deals?.length);
-      console.log(data?.account);
       if (!account?.ignoreOpenDeal) {
         await this.checkOpenPositions(data?.open_positions, account);
       }

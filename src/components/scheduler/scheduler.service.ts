@@ -13,6 +13,7 @@ export class SchedulerService {
   @Cron('0 */5 * * * *')
   async checkClosedOrdersJob() {
     try {
+      console.log('Run cron checkClosedOrdersJob');
       await this.tradingService.checkStates();
     } catch (error) {
       this.logger.error(`Closed order job failed: ${error.message}`);
