@@ -194,6 +194,48 @@ def get_mt5_all():
         "closed_deals": closed
     })
 
+@app.route('/mt5/all-v2', methods=['POST'])
+@login_required
+def get_mt5_allV2():
+    data = request.json or {}
+    mt5_path = str(data.get("mt5Path", "")).strip()
+    account_id = data.get("login")
+
+    if not mt5_path or not account_id:
+        return jsonify({"error": "Thiếu mt5Path hoặc accountId"}), 400
+
+    try:
+        account_id = int(account_id)
+    except Exception:
+        return jsonify({"error": "accountId không hợp lệ"}), 400
+
+    # === Khởi tạo MT5 instance ===
+    mt5.shutdown()
+    if not mt5.initialize(path=mt5_path):
+        return jsonify({"error": f"Không khởi tạo được MT5 tại {mt5_path}: {mt5.last_error()}"}), 500
+
+    # === Kiểm tra đúng tài khoản đang đăng nhập ===
+    info = mt5.account_info()
+    if not info:
+        return jsonify({"error": "Không lấy được thông tin tài khoản. Có thể terminal chưa mở hoặc chưa đăng nhập."}), 500
+    if info.login != account_id:
+        return jsonify({"error": f"MT5 đang đăng nhập tài khoản khác ({info.login}), không phải {account_id}"}), 400
+
+    # === Lấy lệnh đang mở ===
+    positions = mt5.positions_get()
+    raw_positions = [p._asdict() for p in positions] if positions else []
+
+    # === Lấy lịch sử đóng lệnh ===
+    now = datetime.now(timezone.utc) + timedelta(hours=20)
+    closed = get_complete_deals(now)
+
+    return jsonify({
+        "status": "success",
+        "account": info._asdict(),
+        "open_positions": raw_positions,
+        "closed_deals": closed
+    })
+
 
 @app.route('/health', methods=['GET'])
 @login_required
