@@ -84,7 +84,6 @@ export class TradingService {
         password: account.password,
         server: account.server,
       });
-      console.log('account ', account.login, ' data?.open_positions ', data?.open_positions?.length, 'data?.closed_deals ', data?.closed_deals?.length);
       if (!account?.ignoreOpenDeal) {
         await this.checkOpenPositions(data?.open_positions, account);
       }
@@ -110,10 +109,7 @@ export class TradingService {
             accountId: account._id,
             status: OrderStatus.OPENING,
           });
-          this.telegramService.sendOpenTradeNotification(
-            account,
-            order,
-          );
+          this.telegramService.sendOpenTradeNotification(account, order);
         }
       }
     } catch (error) {
@@ -122,39 +118,53 @@ export class TradingService {
   }
   async checkClosedOrders(closedOrders: any, account: any) {
     try {
-      if (!closedOrders) {
-        return;
-      }
-      for (const order of closedOrders) {
-        order.close_time =
-          order?.close_time - 3 * 60 * 60 || new Date().getTime();
-        const existing = await this.findByOrderId(order.order);
-        if (!existing) {
-          if (account?.sendNotify) {
-            this.telegramService.sendClosedTradeNotification(
-              account,
-              order,
+      if (!closedOrders || closedOrders.length === 0) return;
+
+      await Promise.all(
+        closedOrders.map(async (order, index) => {
+          try {
+            order.close_time =
+              order?.close_time - 3 * 60 * 60 || new Date().getTime();
+
+            const existing = await this.findByOrderId(order.order);
+
+            // Nếu chưa tồn tại => tạo mới + gửi notify
+            if (!existing) {
+              if (account?.sendNotify) {
+                await this.telegramService.sendClosedTradeNotification(
+                  account,
+                  order,
+                );
+              }
+              await this.createOrder({
+                ...order,
+                accountId: account._id,
+                status: OrderStatus.CLOSED,
+              });
+            }
+            // Nếu đã có nhưng chưa CLOSED => cập nhật + gửi notify
+            else if (existing.status !== OrderStatus.CLOSED) {
+              if (account?.sendNotify) {
+                await this.telegramService.sendClosedTradeNotification(
+                  account,
+                  order,
+                );
+              }
+              await this.updateOrder(order.order, {
+                ...order,
+                status: OrderStatus.CLOSED,
+              });
+            }
+
+            // Delay nhẹ để tránh spam Telegram (tuỳ chọn)
+            await sleep(1000 * index);
+          } catch (innerErr) {
+            this.logger.error(
+              `checkClosedOrders item error: ${innerErr.message}`,
             );
           }
-          await this.createOrder({
-            ...order,
-            accountId: account._id,
-            status: OrderStatus.CLOSED,
-          });
-        } else if (existing.status !== OrderStatus.CLOSED) {
-          if (account?.sendNotify) {
-            this.telegramService.sendClosedTradeNotification(
-              account,
-              order,
-            );
-          }
-          await this.updateOrder(order.order, {
-            ...order,
-            status: OrderStatus.CLOSED,
-          });
-        }
-        await sleep(1000);
-      }
+        }),
+      );
     } catch (error) {
       this.logger.error(`checkClosedOrders error: ${error.message}`);
     }
