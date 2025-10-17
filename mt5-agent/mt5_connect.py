@@ -105,4 +105,6 @@ def health_check():
     })
 
 if __name__ == '__main__':
-    app.run(port=5000)
+    import logging
+    logging.getLogger('werkzeug').setLevel(logging.ERROR)
+    app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
