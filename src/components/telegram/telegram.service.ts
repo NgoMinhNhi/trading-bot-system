@@ -273,7 +273,36 @@ export class TelegramService implements OnModuleInit {
     this.bot.onText(/\/start/, (msg) => {
       const chatId = msg.chat.id;
       const name = msg.from?.first_name || 'bạn';
-      const welcomeText = `👋 Chào mừng ${name} đến với bot MetaTrader 5!\nChúc bạn có thật nhiều lợi nhuận!`;
+      const welcomeText = `👋 Chào mừng ${name} đến với bot MetaTrader 5!
+
+Chúng tôi rất vui được hỗ trợ bạn trong việc theo dõi lợi nhuận và giao dịch của tài khoản MetaTrader 5.
+
+Dưới đây là các lệnh bạn có thể sử dụng:
+
+1. **/start**: Chào mừng bạn đến với bot.
+   - Ví dụ: \`/start\`
+
+2. **/profits <duration>**: Xem báo cáo lợi nhuận trong một khoảng thời gian nhất định.
+   - Ví dụ: \`/profits 7d\` (Lợi nhuận trong 7 ngày gần nhất)
+
+3. **/pnl**: Hiển thị báo cáo lợi nhuận từ lần cashout gần nhất.
+   - Ví dụ: \`/pnl\`
+
+4. **/pnl_slot**: Xem báo cáo lợi nhuận chia theo slot.
+   - Ví dụ: \`/pnl_slot\`
+
+5. **/pnl_slot_vnd <rate>**: Hiển thị báo cáo lợi nhuận chia theo slot và quy đổi sang VND.
+   - Ví dụ: \`/pnl_slot_vnd 25500\` (Tỉ giá quy đổi 1 USD = 25,500 VND)
+
+6. **/pnl_slot_vnd_export <rate>**: Hiển thị báo cáo lợi nhuận chia theo slot, quy đổi sang VND và xuất ra file Excel.
+   - Ví dụ: \`/pnl_slot_vnd_export 25500\`
+
+7. **/profits_slot <duration>**: Xem báo cáo lợi nhuận chia theo slot trong một khoảng thời gian.
+   - Ví dụ: \`/profits_slot 7d\` (Lợi nhuận chia theo slot trong 7 ngày gần nhất)
+
+Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao dịch thành công và lợi nhuận tốt!`;
+
+
       this.bot.sendMessage(chatId, welcomeText);
     });
 
