@@ -61,6 +61,9 @@ export class Mt5Account {
 
   @Prop()
   mt5Path: string;
+
+  @Prop()
+  subtractFee: boolean;
 }
 
 export type Mt5AccountDocument = Mt5Account & Document;

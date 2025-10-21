@@ -18,12 +18,17 @@ import { SocksProxyAgent } from 'socks-proxy-agent';
 import { roundTo } from '../../utils/number';
 import { formatTime } from '../../utils/time';
 import * as XLSX from 'xlsx';
+import * as fs from 'fs';
+import * as path from 'path';
 
 interface QueueItem {
   chatId: number | string;
   text: string;
   options?: TelegramBot.SendMessageOptions;
 }
+
+const fmtVND = (n: number) => `${Math.floor(n).toLocaleString('vi-VN')} đ`;
+
 
 @Injectable()
 export class TelegramService implements OnModuleInit {
@@ -72,6 +77,7 @@ export class TelegramService implements OnModuleInit {
     this.isProcessingQueue = false;
   }
 
+
   private buildProfitSharingMessageVND(
     account: Mt5Account,
     totalProfit: number,
@@ -80,7 +86,6 @@ export class TelegramService implements OnModuleInit {
   ): string {
     const totalSlots = account.slotHolders.reduce((sum, h) => sum + h.slots, 0);
 
-    const fmtVND = (n: number) => `${Math.round(n).toLocaleString('vi-VN')} đ`;
 
     let message =
       `${title}\n\n` +
@@ -112,17 +117,63 @@ export class TelegramService implements OnModuleInit {
   }
 
   private createExcelReport(data: any[], accountId: string): Buffer {
-    // Cấu hình bảng Excel
+    // Chuyển dữ liệu JSON thành bảng tính Excel
     const ws = XLSX.utils.json_to_sheet(data);
+
+    // Thiết lập chiều rộng cột
+    const columnWidths = [
+      { wch: 10 }, // "No"
+      { wch: 25 }, // "Họ tên"
+      { wch: 15 }, // "slot"
+      { wch: 25 }, // "Lợi - đợt 10 (15/10/2025)"
+      { wch: 15 }, // "Tỉ Giá USD"
+      { wch: 15 }, // "USDT"
+      { wch: 20 }, // "Trạng Thái"
+      { wch: 20 }, // "Binance UID"
+      { wch: 25 }, // "Note"
+    ];
+
+    ws['!cols'] = columnWidths;
+
+    // Thêm border vào tất cả các ô
+    const borderStyle = {
+      top: { style: 'thin', color: { rgb: '000000' } },
+      left: { style: 'thin', color: { rgb: '000000' } },
+      bottom: { style: 'thin', color: { rgb: '000000' } },
+      right: { style: 'thin', color: { rgb: '000000' } },
+    };
+
+    // Duyệt qua tất cả các ô trong sheet
+    Object.keys(ws).forEach((cellRef) => {
+      const cell = ws[cellRef];
+      // Chỉ áp dụng border cho các ô có dữ liệu
+      if (cell.v !== undefined) {
+        cell.s = { border: borderStyle }; // Thêm border cho từng ô
+      }
+    });
+
+    // Tạo workbook và thêm bảng tính vào workbook
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'PnL Report');
 
-    // Tạo tên file theo accountId
-    const fileName = `PnL_Report_${accountId}.xlsx`;
-
-    // Chuyển đổi thành file Excel
+    // Chuyển bảng tính thành file Excel dưới dạng buffer
     const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
     return excelBuffer;
+  }
+
+  private saveExcelReport(excelBuffer: Buffer, accountId: string): string {
+    const outputDir = path.join(__dirname, 'uploads'); // Tạo thư mục lưu trữ nếu chưa có
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir);
+    }
+
+    const fileName = `PnL_Report_${accountId}.xlsx`; // Tên file
+    const filePath = path.join(outputDir, fileName); // Đường dẫn file
+
+    // Ghi buffer vào file
+    fs.writeFileSync(filePath, excelBuffer);
+
+    return filePath; // Trả về đường dẫn file
   }
 
   private buildProfitSharingData(
@@ -144,35 +195,40 @@ export class TelegramService implements OnModuleInit {
     // Dữ liệu đầu vào
     const data: any[] = [];
 
+    let i = 1;
+    let totalSlot = 0;
+    let totalShareVND = 0;
     for (const holder of account.slotHolders) {
       const share = (holder.slots / totalSlots) * totalProfit;
-      const shareVND = share * rate;
-
+      const shareVND = Math.floor(share * rate);
+      totalShareVND += shareVND;
+      totalSlot += holder.slots;
       data.push({
+        No: i,
         'Họ tên': holder.name,
-        slot: holder.slots,
-        Lời: `${share.toFixed(2)} USD`,
-        'Tỉ Giá USD': rate,
-        USDT: (share / rate).toFixed(2),
+        Slot: holder.slots,
+        Lời: fmtVND(shareVND),
+        'Tỉ Giá USD': fmtVND(rate),
+        USDT: share.toFixed(2),
         'Trạng Thái': '',
         'Binance UID': '',
-        VND: `${shareVND.toFixed(2)} đ`,
+        Note: '',
       });
+      i++;
     }
 
     // Thêm dòng trừ phí vào cuối bảng
-    if (config.subtractFee) {
-      data.push({
-        'Họ tên': 'Trừ 0.5u phí bán',
-        slot: '',
-        Lời: '-0.5 USD',
-        'Tỉ Giá USD': rate,
-        USDT: '-0.01',
-        'Trạng Thái': '',
-        'Binance UID': '',
-        VND: `${(0.5 * rate).toFixed(2)} đ`,
-      });
-    }
+    data.push({
+      No: 'Total',
+      'Họ tên': '',
+      Slot: totalSlot,
+      Lời: fmtVND(totalShareVND),
+      'Tỉ Giá USD': fmtVND(rate),
+      USDT: totalProfit.toFixed(2),
+      'Trạng Thái': '',
+      'Binance UID': '',
+      Note: config.subtractFee ? `Trừ 0.5u phí bán` : '',
+    });
 
     return data;
   }
@@ -301,7 +357,6 @@ Dưới đây là các lệnh bạn có thể sử dụng:
    - Ví dụ: \`/profits_slot 7d\` (Lợi nhuận chia theo slot trong 7 ngày gần nhất)
 
 Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao dịch thành công và lợi nhuận tốt!`;
-
 
       this.bot.sendMessage(chatId, welcomeText);
     });
@@ -541,25 +596,25 @@ Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao d
 
           // Tính dữ liệu phân chia, trừ phí bán
           const data = this.buildProfitSharingData(account, profit, rate, {
-            subtractFee: true,
+            subtractFee: account?.subtractFee,
           });
-
           // Tạo file Excel từ dữ liệu
           const excelBuffer = this.createExcelReport(data, accountId);
-
-          // Gửi file Excel qua Telegram
-          const fileName = `PnL_Report_${accountId}.xlsx`;
-          const document = {
-            source: excelBuffer,
-            filename: fileName,
-          };
+          const filePath = this.saveExcelReport(
+            excelBuffer,
+            account?.login as any,
+          );
 
           try {
-            // Truyền trực tiếp buffer và caption vào sendDocument
-            await this.bot.sendDocument(chatId, excelBuffer, { caption: `Báo cáo PnL cho tài khoản ${accountId}` });
+            // Gửi file Excel qua Telegram sử dụng đường dẫn
+            await this.bot.sendDocument(chatId, filePath, {
+              caption: `Báo cáo PnL cho tài khoản ${account?.login}`,
+            });
             this.logger.debug(`📨 Sent Excel file to ${chatId}`);
           } catch (error) {
-            this.logger.error(`🚨 Failed to send Excel file to ${chatId}: ${error.message}`);
+            this.logger.error(
+              `🚨 Failed to send Excel file to ${chatId}: ${error.message}`,
+            );
           }
 
           await sleep(1000);
