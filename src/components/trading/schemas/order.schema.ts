@@ -10,6 +10,7 @@ export enum OrderStatus {
   OPENING = 'OPENING',
   NOTIFIED = 'NOTIFIED',
   CLOSED = 'CLOSED',
+  DELETED = 'DELETED',
 }
 @Schema({ timestamps: true })
 export class Order {

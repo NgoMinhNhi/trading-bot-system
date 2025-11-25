@@ -4,9 +4,9 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Order, OrderDocument, OrderStatus } from './schemas/order.schema';
 import {
+  AccountStatus,
   Mt5Account,
   Mt5AccountDocument,
-  AccountStatus,
 } from './schemas/mt5-account.schema';
 import { ApiClientService } from '../api-client/api-client.service';
 import { TelegramService } from '../telegram/telegram.service';
@@ -143,7 +143,10 @@ export class TradingService {
               });
             }
             // Nếu đã có nhưng chưa CLOSED => cập nhật + gửi notify
-            else if (existing.status !== OrderStatus.CLOSED) {
+            else if (
+              existing.status !== OrderStatus.DELETED &&
+              existing.status !== OrderStatus.CLOSED
+            ) {
               if (account?.sendNotify) {
                 await this.telegramService.sendClosedTradeNotification(
                   account,
