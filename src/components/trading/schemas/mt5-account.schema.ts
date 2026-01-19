@@ -64,6 +64,15 @@ export class Mt5Account {
 
   @Prop()
   subtractFee: boolean;
+
+  @Prop({
+    type: {
+      name: String, // Tên người control bot
+      percentage: Number, // % lợi nhuận được chia (ví dụ: 10 = 10%)
+    },
+    default: null,
+  })
+  controllerShare: { name: string; percentage: number } | null;
 }
 
 export type Mt5AccountDocument = Mt5Account & Document;

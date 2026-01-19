@@ -86,6 +86,12 @@ export class TelegramService implements OnModuleInit {
   ): string {
     const totalSlots = account.slotHolders.reduce((sum, h) => sum + h.slots, 0);
 
+    // Tính phần controller (nếu có)
+    const controllerShare = account.controllerShare;
+    const controllerAmount = controllerShare
+      ? (totalProfit * controllerShare.percentage) / 100
+      : 0;
+    const profitAfterController = totalProfit - controllerAmount;
 
     let message =
       `${title}\n\n` +
@@ -98,11 +104,26 @@ export class TelegramService implements OnModuleInit {
       message += ` (~ *${fmtVND(totalVnd)}*)`;
     }
 
-    message +=
-      `\n• Tổng slot: ${totalSlots}\n\n` + `📑 *Chi tiết phân chia:*\n`;
+    message += `\n• Tổng slot: ${totalSlots}\n`;
+
+    // Hiển thị phần controller nếu có
+    if (controllerShare) {
+      let controllerLine = `\n🎮 *Thưởng Controller:*\n- ${controllerShare.name}: ${controllerAmount >= 0 ? '+' : ''}${controllerAmount.toFixed(2)} ${account?.currency || 'USD'} (${controllerShare.percentage}% lợi nhuận)`;
+      if (options?.vndRate && options.vndRate > 0) {
+        const controllerVnd = controllerAmount * options.vndRate;
+        controllerLine += `  ~ ${fmtVND(controllerVnd)}`;
+      }
+      message += `${controllerLine}\n`;
+    }
+
+    // Hiển thị phần chia slot
+    const sharingTitle = controllerShare
+      ? `\n📑 *Chi tiết phân chia (sau khi trừ controller):*\n`
+      : `\n📑 *Chi tiết phân chia:*\n`;
+    message += sharingTitle;
 
     for (const holder of account.slotHolders) {
-      const share = (holder.slots / totalSlots) * totalProfit;
+      const share = (holder.slots / totalSlots) * profitAfterController;
       let line = `- ${holder.name}: ${share >= 0 ? '+' : ''}${share.toFixed(2)}`;
       line += ` (${holder.slots} slot)`;
 
@@ -292,6 +313,13 @@ export class TelegramService implements OnModuleInit {
       0,
     );
 
+    // Tính phần controller (nếu có)
+    const controllerShare = account.controllerShare;
+    const controllerAmount = controllerShare
+      ? (totalProfit * controllerShare.percentage) / 100
+      : 0;
+    const profitAfterController = totalProfit - controllerAmount;
+
     let message =
       `${title}\n\n` +
       `👤 *Tài khoản:* ${account.login}${account?.name ? ` - ${account.name}` : ''}\n` +
@@ -299,11 +327,23 @@ export class TelegramService implements OnModuleInit {
       `• Tổng lợi nhuận: *${totalProfit >= 0 ? '+' : ''}${totalProfit.toFixed(
         2,
       )} ${account?.currency || 'USD'}*\n` +
-      `• Tổng slot: ${totalSlots}\n\n` +
-      `📑 *Chi tiết phân chia:*\n`;
+      `• Tổng slot: ${totalSlots}\n`;
+
+    // Hiển thị phần controller nếu có
+    if (controllerShare) {
+      message +=
+        `\n🎮 *Thưởng Controller:*\n` +
+        `- ${controllerShare.name}: ${controllerAmount >= 0 ? '+' : ''}${controllerAmount.toFixed(2)} ${account?.currency || 'USD'} (${controllerShare.percentage}% lợi nhuận)\n`;
+    }
+
+    // Hiển thị phần chia slot
+    const sharingTitle = controllerShare
+      ? `\n📑 *Chi tiết phân chia (sau khi trừ controller):*\n`
+      : `\n📑 *Chi tiết phân chia:*\n`;
+    message += sharingTitle;
 
     for (const holder of account.slotHolders) {
-      const share = (holder.slots / totalSlots) * totalProfit;
+      const share = (holder.slots / totalSlots) * profitAfterController;
       message += `- ${holder.name}: ${share >= 0 ? '+' : ''}${share.toFixed(
         2,
       )} (${holder.slots} slot)\n`;
