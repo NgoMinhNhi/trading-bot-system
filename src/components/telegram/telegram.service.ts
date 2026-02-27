@@ -29,6 +29,11 @@ interface QueueItem {
 
 const fmtVND = (n: number) => `${Math.floor(n).toLocaleString('vi-VN')} đ`;
 
+const escapeMarkdown = (text: any): string => {
+  if (text == null) return '';
+  return String(text).replace(/([_*`\[\]])/g, '\\$1');
+};
+
 
 @Injectable()
 export class TelegramService implements OnModuleInit {
@@ -47,34 +52,39 @@ export class TelegramService implements OnModuleInit {
     if (this.isProcessingQueue) return;
     this.isProcessingQueue = true;
 
-    while (this.messageQueue.length > 0) {
-      const data = this.messageQueue.shift();
-      if (!data) {
-        continue;
-      }
-      const { chatId, text, options } = data;
-      try {
-        await this.bot.sendMessage(chatId, text, options);
-        this.logger.debug(`✅ Sent message to ${chatId}`);
-      } catch (error: any) {
-        if (error.response?.statusCode === 429) {
-          const retryAfter = error.response.body?.parameters?.retry_after || 5;
-          this.logger.warn(`⏳ Rate limited. Retry after ${retryAfter}s`);
-          await sleep(retryAfter * 1000);
-          // Requeue the message
-          this.messageQueue.unshift({ chatId, text, options });
-        } else {
-          this.logger.error(
-            `🚨 Failed to send message to ${chatId}: ${error.message}`,
-          );
+    try {
+      while (this.messageQueue.length > 0) {
+        const data = this.messageQueue.shift();
+        if (!data) {
+          continue;
         }
+        const { chatId, text, options } = data;
+        try {
+          await this.bot.sendMessage(chatId, text, options);
+          this.logger.debug(`✅ Sent message to ${chatId}`);
+        } catch (error: any) {
+          if (error.response?.statusCode === 429) {
+            const retryAfter =
+              error.response.body?.parameters?.retry_after || 5;
+            this.logger.warn(`⏳ Rate limited. Retry after ${retryAfter}s`);
+            await sleep(retryAfter * 1000);
+            // Requeue the message
+            this.messageQueue.unshift({ chatId, text, options });
+          } else {
+            this.logger.error(
+              `🚨 Failed to send message to ${chatId}: ${error.message}`,
+            );
+          }
+        }
+
+        // ⏱ Delay 0.5 giây giữa mỗi message
+        await sleep(500);
       }
-
-      // ⏱ Delay 0.5 giây giữa mỗi message
-      await sleep(500);
+    } catch (error: any) {
+      this.logger.error(`🚨 processQueue crashed: ${error.message}`);
+    } finally {
+      this.isProcessingQueue = false;
     }
-
-    this.isProcessingQueue = false;
   }
 
 
@@ -758,15 +768,18 @@ Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao d
       order;
     const typeText = type === 0 ? '🟢 Buy' : '🔴 Sell';
     const date = new Date(time * 1000).toLocaleString('vi-VN');
+    const safeSymbol = escapeMarkdown(symbol);
+    const safeName = escapeMarkdown(name);
+    const safeProfit = typeof profit === 'number' ? profit.toFixed(2) : '0.00';
 
     const message =
       `📥 *Lệnh mới được mở!* \n\n` +
-      `👤 *Tài khoản:* ${login} ${name ? `(${name})` : ''}\n\n` +
-      `• ${typeText} ${symbol}\n` +
+      `👤 *Tài khoản:* ${login} ${safeName ? `(${safeName})` : ''}\n\n` +
+      `• ${typeText} ${safeSymbol}\n` +
       `• Khối lượng: *${volume} lot*\n` +
       `• Giá mở cửa: *${price_open}*\n` +
       `• Giá hiện tại: *${price_current}*\n` +
-      `• Lợi nhuận tạm tính: *${profit >= 0 ? '+' : ''}${profit.toFixed(2)} USD*\n` +
+      `• Lợi nhuận tạm tính: *${profit >= 0 ? '+' : ''}${safeProfit} USD*\n` +
       `• Thời gian mở: ${date}`;
 
     chatIds.forEach(async (id) => {
@@ -790,18 +803,22 @@ Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao d
 
     const typeText = type !== 0 ? '🟢 Buy' : '🔴 Sell';
     const date = new Date(close_time * 1000).toLocaleString('vi-VN');
+    const safeSymbol = escapeMarkdown(symbol);
+    const safeName = escapeMarkdown(name);
+    const safeComment = escapeMarkdown(comment);
+    const safeProfit = typeof profit === 'number' ? profit.toFixed(2) : '0.00';
 
     const message =
       `📤 *Lệnh đã đóng!*\n\n` +
-      `👤 *Tài khoản:* ${login} ${name ? `(${name})` : ''}\n\n` +
-      `• ${typeText} ${symbol}\n` +
+      `👤 *Tài khoản:* ${login} ${safeName ? `(${safeName})` : ''}\n\n` +
+      `• ${typeText} ${safeSymbol}\n` +
       `• Khối lượng: *${volume} lot*\n` +
       `• Giá mở: *${order.open_price}*\n` +
       `• Giá đóng: *${close_price}*\n` +
-      `• Lợi nhuận: *${profit >= 0 ? '+' : ''}${profit.toFixed(2)} USD*\n ` +
+      `• Lợi nhuận: *${profit >= 0 ? '+' : ''}${safeProfit} USD*\n ` +
       `• Ticket: ${ticket}\n` +
       `• Thời gian đóng: ${date}\n` +
-      (comment ? `• Ghi chú: \`${comment}\`\n` : '');
+      (safeComment ? `• Ghi chú: \`${safeComment}\`\n` : '');
 
     chatIds.forEach(async (chatId) => {
       await this.sendMessage(chatId, message, { parse_mode: 'Markdown' });
