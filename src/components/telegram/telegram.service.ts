@@ -114,6 +114,11 @@ export class TelegramService implements OnModuleInit {
       message += ` (~ *${fmtVND(totalVnd)}*)`;
     }
 
+    if (account?.balanceInit && account.balanceInit > 0) {
+      const profitRate = ((totalProfit / account.balanceInit) * 100).toFixed(2);
+      message += ` | *${totalProfit >= 0 ? '+' : ''}${profitRate}%*`;
+    }
+
     message += `\n• Tổng slot: ${totalSlots}\n`;
 
     // Hiển thị phần controller nếu có
@@ -330,13 +335,18 @@ export class TelegramService implements OnModuleInit {
       : 0;
     const profitAfterController = totalProfit - controllerAmount;
 
+    const profitRatePart =
+      account?.balanceInit && account.balanceInit > 0
+        ? ` | *${totalProfit >= 0 ? '+' : ''}${((totalProfit / account.balanceInit) * 100).toFixed(2)}%*`
+        : '';
+
     let message =
       `${title}\n\n` +
       `👤 *Tài khoản:* ${account.login}${account?.name ? ` - ${account.name}` : ''}\n` +
       `• Server: ${account.server}\n` +
       `• Tổng lợi nhuận: *${totalProfit >= 0 ? '+' : ''}${totalProfit.toFixed(
         2,
-      )} ${account?.currency || 'USD'}*\n` +
+      )} ${account?.currency || 'USD'}*${profitRatePart}\n` +
       `• Tổng slot: ${totalSlots}\n`;
 
     // Hiển thị phần controller nếu có
