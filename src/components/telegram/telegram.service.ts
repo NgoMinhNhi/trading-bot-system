@@ -385,6 +385,31 @@ export class TelegramService implements OnModuleInit {
       // ...(proxyHost && { request: { agent } as any }),
     });
 
+    this.bot.on('polling_error', (err: any) => {
+      this.logger.error(
+        `🚨 polling_error: code=${err?.code} message=${err?.message}`,
+      );
+    });
+    this.bot.on('error', (err: any) => {
+      this.logger.error(`🚨 bot error: ${err?.message}`);
+    });
+
+    this.bot
+      .getMe()
+      .then((me) =>
+        this.logger.log(`✅ Bot connected as @${me.username} (id=${me.id})`),
+      )
+      .catch((err) =>
+        this.logger.error(`🚨 getMe failed: ${err?.message}`),
+      );
+
+    this.bot
+      .deleteWebHook()
+      .then(() => this.logger.log('✅ Webhook cleared (if any)'))
+      .catch((err) =>
+        this.logger.error(`🚨 deleteWebHook failed: ${err?.message}`),
+      );
+
     // Xử lý lệnh /start
     this.bot.onText(/\/start/, (msg) => {
       const chatId = msg.chat.id;
