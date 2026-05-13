@@ -38,8 +38,10 @@ def get_complete_deals(now):
                 "close_time": close_deal['time'],
                 "profit": close_deal['profit'],
                 "swap": close_deal['swap'],
-                "commission": close_deal['commission'],
-                "fee": close_deal['fee'],
+                # Commission/fee tính round-turn: broker charge cả open + close
+                # nên x2 close-side để khớp tổng MT5 hiển thị
+                "commission": close_deal['commission'] * 2,
+                "fee": close_deal['fee'] * 2,
                 "ticket": close_deal['ticket'],
                 "order": close_deal['order'],
                 "external_id": close_deal['external_id'],
