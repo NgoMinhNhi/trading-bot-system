@@ -27,6 +27,17 @@ interface QueueItem {
   options?: TelegramBot.SendMessageOptions;
 }
 
+interface ProfitBreakdown {
+  grossProfit: number;
+  commission: number;
+  swap: number;
+  fee: number;
+  netProfit: number;
+}
+
+const fmtSigned = (n: number, digits = 2) =>
+  `${n >= 0 ? '+' : ''}${n.toFixed(digits)}`;
+
 const fmtVND = (n: number) => `${Math.floor(n).toLocaleString('vi-VN')} đ`;
 
 const escapeMarkdown = (text: any): string => {
@@ -90,40 +101,42 @@ export class TelegramService implements OnModuleInit {
 
   private buildProfitSharingMessageVND(
     account: Mt5Account,
-    totalProfit: number,
+    breakdown: ProfitBreakdown,
     title: string,
     options?: { vndRate?: number }, // <— thêm tuỳ chọn
   ): string {
+    const netProfit = breakdown.netProfit;
+    const currency = account?.currency || 'USD';
     const totalSlots = account.slotHolders.reduce((sum, h) => sum + h.slots, 0);
 
     // Tính phần controller (nếu có)
     const controllerShare = account.controllerShare;
     const controllerAmount = controllerShare
-      ? (totalProfit * controllerShare.percentage) / 100
+      ? (netProfit * controllerShare.percentage) / 100
       : 0;
-    const profitAfterController = totalProfit - controllerAmount;
+    const profitAfterController = netProfit - controllerAmount;
 
     let message =
       `${title}\n\n` +
       `👤 *Tài khoản:* ${account.login}${account?.name ? ` - ${account.name}` : ''}\n` +
       `• Server: ${account.server}\n` +
-      `• Tổng lợi nhuận: *${totalProfit >= 0 ? '+' : ''}${totalProfit.toFixed(2)} ${account?.currency || 'USD'}*`;
+      `${this.buildBreakdownLines(breakdown, currency)}\n` +
+      `• Lợi nhuận thực: *${fmtSigned(netProfit)} ${currency}*`;
 
     if (options?.vndRate && options.vndRate > 0) {
-      const totalVnd = totalProfit * options.vndRate;
+      const totalVnd = netProfit * options.vndRate;
       message += ` (~ *${fmtVND(totalVnd)}*)`;
     }
 
     if (account?.balanceInit && account.balanceInit > 0) {
-      const profitRate = ((totalProfit / account.balanceInit) * 100).toFixed(2);
-      message += ` | *${totalProfit >= 0 ? '+' : ''}${profitRate}%*`;
+      message += ` | *${fmtSigned((netProfit / account.balanceInit) * 100)}%*`;
     }
 
     message += `\n• Tổng slot: ${totalSlots}\n`;
 
     // Hiển thị phần controller nếu có
     if (controllerShare) {
-      let controllerLine = `\n🎮 *Thưởng Controller:*\n- ${controllerShare.name}: ${controllerAmount >= 0 ? '+' : ''}${controllerAmount.toFixed(2)} ${account?.currency || 'USD'} (${controllerShare.percentage}% lợi nhuận)`;
+      let controllerLine = `\n🎮 *Thưởng Controller:*\n- ${controllerShare.name}: ${fmtSigned(controllerAmount)} ${currency} (${controllerShare.percentage}% lợi nhuận)`;
       if (options?.vndRate && options.vndRate > 0) {
         const controllerVnd = controllerAmount * options.vndRate;
         controllerLine += `  ~ ${fmtVND(controllerVnd)}`;
@@ -139,8 +152,7 @@ export class TelegramService implements OnModuleInit {
 
     for (const holder of account.slotHolders) {
       const share = (holder.slots / totalSlots) * profitAfterController;
-      let line = `- ${holder.name}: ${share >= 0 ? '+' : ''}${share.toFixed(2)}`;
-      line += ` (${holder.slots} slot)`;
+      let line = `- ${holder.name}: ${fmtSigned(share)} (${holder.slots} slot)`;
 
       if (options?.vndRate && options.vndRate > 0) {
         const vnd = share * options.vndRate;
@@ -254,6 +266,8 @@ export class TelegramService implements OnModuleInit {
     }
 
     // Thêm dòng trừ phí vào cuối bảng
+    const noteParts = ['Đã trừ phí qua đêm + hoa hồng'];
+    if (config.subtractFee) noteParts.push('Trừ 0.5u phí bán');
     data.push({
       No: 'Total',
       'Họ tên': '',
@@ -263,66 +277,91 @@ export class TelegramService implements OnModuleInit {
       USDT: totalProfit.toFixed(2),
       'Trạng Thái': '',
       'Binance UID': '',
-      Note: config.subtractFee ? `Trừ 0.5u phí bán` : '',
+      Note: noteParts.join('; '),
     });
 
     return data;
   }
 
-  async getClosedProfitWithinDuration(
-    accountId: string,
-    duration: number,
-  ): Promise<number> {
-    const fromTimestampSec = Math.floor((Date.now() - duration) / 1000);
-
+  private async aggregateProfitBreakdown(
+    match: Record<string, any>,
+  ): Promise<ProfitBreakdown> {
     const result = await this.orderModel.aggregate([
-      {
-        $match: {
-          accountId: new mongoose.Types.ObjectId(accountId),
-          status: OrderStatus.CLOSED,
-          close_time: { $gte: fromTimestampSec },
-        },
-      },
+      { $match: match },
       {
         $group: {
           _id: null,
-          totalProfit: { $sum: '$profit' },
+          grossProfit: { $sum: { $ifNull: ['$profit', 0] } },
+          commission: { $sum: { $ifNull: ['$commission', 0] } },
+          swap: { $sum: { $ifNull: ['$swap', 0] } },
+          fee: { $sum: { $ifNull: ['$fee', 0] } },
         },
       },
     ]);
+    const r = result[0] || {};
+    const grossProfit = r.grossProfit || 0;
+    const commission = r.commission || 0;
+    const swap = r.swap || 0;
+    const fee = r.fee || 0;
+    return {
+      grossProfit,
+      commission,
+      swap,
+      fee,
+      netProfit: grossProfit + commission + swap + fee,
+    };
+  }
 
-    return result[0]?.totalProfit || 0;
+  async getClosedProfitWithinDuration(
+    accountId: string,
+    duration: number,
+  ): Promise<ProfitBreakdown> {
+    const fromTimestampSec = Math.floor((Date.now() - duration) / 1000);
+    return this.aggregateProfitBreakdown({
+      accountId: new mongoose.Types.ObjectId(accountId),
+      status: OrderStatus.CLOSED,
+      close_time: { $gte: fromTimestampSec },
+    });
   }
 
   async getClosedProfitAfterTime(
     accountId: string,
     time: number,
-  ): Promise<number> {
+  ): Promise<ProfitBreakdown> {
     const fromTimestampSec = Math.floor(time / 1000);
-    const result = await this.orderModel.aggregate([
-      {
-        $match: {
-          accountId: new mongoose.Types.ObjectId(accountId),
-          status: OrderStatus.CLOSED,
-          close_time: { $gte: fromTimestampSec },
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          totalProfit: { $sum: '$profit' },
-        },
-      },
-    ]);
+    return this.aggregateProfitBreakdown({
+      accountId: new mongoose.Types.ObjectId(accountId),
+      status: OrderStatus.CLOSED,
+      close_time: { $gte: fromTimestampSec },
+    });
+  }
 
-    return result[0]?.totalProfit || 0;
+  private buildBreakdownLines(
+    breakdown: ProfitBreakdown,
+    currency: string,
+  ): string {
+    const { grossProfit, swap, commission, fee } = breakdown;
+    const lines: string[] = [
+      `• Lợi nhuận gộp: ${fmtSigned(grossProfit)} ${currency}`,
+    ];
+    if (swap !== 0) {
+      lines.push(`• Phí qua đêm: ${fmtSigned(swap)} ${currency}`);
+    }
+    const commissionTotal = commission + fee;
+    if (commissionTotal !== 0) {
+      lines.push(`• Hoa hồng: ${fmtSigned(commissionTotal)} ${currency}`);
+    }
+    return lines.join('\n');
   }
 
   private buildProfitSharingMessage(
     account: Mt5Account,
-    totalProfit: number,
+    breakdown: ProfitBreakdown,
     title: string,
   ): string {
+    const netProfit = breakdown.netProfit;
+    const currency = account?.currency || 'USD';
+
     const totalSlots = account.slotHolders.reduce(
       (sum, holder) => sum + holder.slots,
       0,
@@ -331,29 +370,28 @@ export class TelegramService implements OnModuleInit {
     // Tính phần controller (nếu có)
     const controllerShare = account.controllerShare;
     const controllerAmount = controllerShare
-      ? (totalProfit * controllerShare.percentage) / 100
+      ? (netProfit * controllerShare.percentage) / 100
       : 0;
-    const profitAfterController = totalProfit - controllerAmount;
+    const profitAfterController = netProfit - controllerAmount;
 
     const profitRatePart =
       account?.balanceInit && account.balanceInit > 0
-        ? ` | *${totalProfit >= 0 ? '+' : ''}${((totalProfit / account.balanceInit) * 100).toFixed(2)}%*`
+        ? ` | *${fmtSigned((netProfit / account.balanceInit) * 100)}%*`
         : '';
 
     let message =
       `${title}\n\n` +
       `👤 *Tài khoản:* ${account.login}${account?.name ? ` - ${account.name}` : ''}\n` +
       `• Server: ${account.server}\n` +
-      `• Tổng lợi nhuận: *${totalProfit >= 0 ? '+' : ''}${totalProfit.toFixed(
-        2,
-      )} ${account?.currency || 'USD'}*${profitRatePart}\n` +
+      `${this.buildBreakdownLines(breakdown, currency)}\n` +
+      `• Lợi nhuận thực: *${fmtSigned(netProfit)} ${currency}*${profitRatePart}\n` +
       `• Tổng slot: ${totalSlots}\n`;
 
     // Hiển thị phần controller nếu có
     if (controllerShare) {
       message +=
         `\n🎮 *Thưởng Controller:*\n` +
-        `- ${controllerShare.name}: ${controllerAmount >= 0 ? '+' : ''}${controllerAmount.toFixed(2)} ${account?.currency || 'USD'} (${controllerShare.percentage}% lợi nhuận)\n`;
+        `- ${controllerShare.name}: ${fmtSigned(controllerAmount)} ${currency} (${controllerShare.percentage}% lợi nhuận)\n`;
     }
 
     // Hiển thị phần chia slot
@@ -364,9 +402,7 @@ export class TelegramService implements OnModuleInit {
 
     for (const holder of account.slotHolders) {
       const share = (holder.slots / totalSlots) * profitAfterController;
-      message += `- ${holder.name}: ${share >= 0 ? '+' : ''}${share.toFixed(
-        2,
-      )} (${holder.slots} slot)\n`;
+      message += `- ${holder.name}: ${fmtSigned(share)} (${holder.slots} slot)\n`;
     }
 
     return message;
@@ -488,13 +524,15 @@ Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao d
 
       for (const account of accounts) {
         const accountId = (account._id as mongoose.Types.ObjectId).toString();
-        const profit = await this.getClosedProfitWithinDuration(
+        const breakdown = await this.getClosedProfitWithinDuration(
           accountId,
           duration,
         );
+        const netProfit = breakdown.netProfit;
+        const currency = account?.currency || 'USD';
         let profitRate: any = null;
         if (account?.balanceInit) {
-          profitRate = roundTo((profit / account.balanceInit) * 100, 2);
+          profitRate = roundTo((netProfit / account.balanceInit) * 100, 2);
         }
         const timeLabel = inputText.split(' ')[1] || 'khoảng thời gian';
 
@@ -502,9 +540,10 @@ Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao d
           `💰 *Tổng lợi nhuận đã đóng (${timeLabel})*\n` +
           `• Tài khoản: *${account.login}*${account?.name ? ` - *${account.name}*` : ''}\n` +
           `• Server: ${account.server}\n` +
-          `• Lợi nhuận: *${profit >= 0 ? '+' : ''}${profit.toFixed(2)} ${account?.currency || 'USD'}*`;
+          `${this.buildBreakdownLines(breakdown, currency)}\n` +
+          `• Lợi nhuận thực: *${fmtSigned(netProfit)} ${currency}*`;
         if (profitRate !== null) {
-          message += `(${profitRate}%)`;
+          message += ` (${profitRate}%)`;
         }
 
         await this.sendMessage(chatId, message, { parse_mode: 'Markdown' });
@@ -538,15 +577,17 @@ Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao d
         }
 
         // Tính tổng lợi nhuận từ lastCashout
-        const profit = await this.getClosedProfitAfterTime(
+        const breakdown = await this.getClosedProfitAfterTime(
           accountId,
           lastCashout,
         );
+        const netProfit = breakdown.netProfit;
+        const currency = account?.currency || 'USD';
 
         // Tính tỉ lệ lợi nhuận
         let profitRate: any = null;
         if (account?.balanceInit) {
-          profitRate = roundTo((profit / account.balanceInit) * 100, 2);
+          profitRate = roundTo((netProfit / account.balanceInit) * 100, 2);
         }
         const lastCashoutLabel = account?.lastCashout
           ? formatTime(account.lastCashout, 'YYYY-MM-DD HH:mm:ss')
@@ -555,7 +596,8 @@ Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao d
           `📊 *Báo cáo lợi nhuận từ lần cashout gần nhất*\n\n` +
           `👤 *Tài khoản:* ${account.login}${account?.name ? ` - ${account.name}` : ''}\n` +
           `• Server: ${account.server}\n` +
-          `• Lợi nhuận: *${profit >= 0 ? '+' : ''}${profit.toFixed(2)} ${account?.currency || 'USD'}*\n` +
+          `${this.buildBreakdownLines(breakdown, currency)}\n` +
+          `• Lợi nhuận thực: *${fmtSigned(netProfit)} ${currency}*\n` +
           (profitRate !== null ? `• Tỉ lệ: *${profitRate}%*\n` : '') +
           `• Lần cashout gần nhất: ${lastCashoutLabel}`;
 
@@ -574,14 +616,14 @@ Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao d
         const lastCashout =
           account.lastCashout || new Date('2025-01-01').getTime();
         const accountId = (account._id as mongoose.Types.ObjectId).toString();
-        const profit = await this.getClosedProfitAfterTime(
+        const breakdown = await this.getClosedProfitAfterTime(
           accountId,
           lastCashout,
         );
 
         const message = this.buildProfitSharingMessage(
           account,
-          profit,
+          breakdown,
           `📊 *Báo cáo PnL từ lần cashout gần nhất (chia theo slot)*`,
         );
 
@@ -623,14 +665,14 @@ Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao d
           const accountId = (account._id as mongoose.Types.ObjectId).toString();
 
           // Lợi nhuận từ lần cashout gần nhất
-          const profit = await this.getClosedProfitAfterTime(
+          const breakdown = await this.getClosedProfitAfterTime(
             accountId,
             lastCashout,
           );
 
           const message = this.buildProfitSharingMessageVND(
             account,
-            profit,
+            breakdown,
             `📊 *Báo cáo PnL từ lần cashout gần nhất (chia theo slot)*\n💱 Tỉ giá quy đổi: *${rate.toLocaleString('vi-VN')} VND / USDT*`,
             { vndRate: rate },
           );
@@ -674,15 +716,20 @@ Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao d
             account.lastCashout || new Date('2025-01-01').getTime();
 
           // Tính lợi nhuận từ lần cashout gần nhất
-          const profit = await this.getClosedProfitAfterTime(
+          const breakdown = await this.getClosedProfitAfterTime(
             accountId,
             lastCashout,
           );
 
           // Tính dữ liệu phân chia, trừ phí bán
-          const data = this.buildProfitSharingData(account, profit, rate, {
-            subtractFee: account?.subtractFee,
-          });
+          const data = this.buildProfitSharingData(
+            account,
+            breakdown.netProfit,
+            rate,
+            {
+              subtractFee: account?.subtractFee,
+            },
+          );
           // Tạo file Excel từ dữ liệu
           const excelBuffer = this.createExcelReport(data, accountId);
           const filePath = this.saveExcelReport(
@@ -693,7 +740,7 @@ Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao d
           try {
             // Gửi file Excel qua Telegram sử dụng đường dẫn
             await this.bot.sendDocument(chatId, filePath, {
-              caption: `Báo cáo PnL cho tài khoản ${account?.login}`,
+              caption: `Báo cáo PnL cho tài khoản ${account?.login} (đã trừ phí qua đêm + hoa hồng)`,
             });
             this.logger.debug(`📨 Sent Excel file to ${chatId}`);
           } catch (error) {
@@ -747,14 +794,14 @@ Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao d
         const accountId = (account._id as mongoose.Types.ObjectId).toString();
 
         // Tính tổng lợi nhuận theo duration
-        const profit = await this.getClosedProfitWithinDuration(
+        const breakdown = await this.getClosedProfitWithinDuration(
           accountId,
           duration,
         );
 
         const message = this.buildProfitSharingMessage(
           account,
-          profit,
+          breakdown,
           `📊 *Báo cáo PnL (${inputText}) - chia theo slot*`,
         );
 
@@ -831,6 +878,9 @@ Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao d
       volume,
       close_price,
       profit,
+      swap,
+      commission,
+      fee,
       ticket,
       close_time,
       comment,
@@ -841,16 +891,30 @@ Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao d
     const safeSymbol = escapeMarkdown(symbol);
     const safeName = escapeMarkdown(name);
     const safeComment = escapeMarkdown(comment);
-    const safeProfit = typeof profit === 'number' ? profit.toFixed(2) : '0.00';
 
-    const message =
+    const gross = typeof profit === 'number' ? profit : 0;
+    const swapN = typeof swap === 'number' ? swap : 0;
+    const commissionN = typeof commission === 'number' ? commission : 0;
+    const feeN = typeof fee === 'number' ? fee : 0;
+    const commissionTotal = commissionN + feeN;
+    const net = gross + swapN + commissionTotal;
+
+    let message =
       `📤 *Lệnh đã đóng!*\n\n` +
       `👤 *Tài khoản:* ${login} ${safeName ? `(${safeName})` : ''}\n\n` +
       `• ${typeText} ${safeSymbol}\n` +
       `• Khối lượng: *${volume} lot*\n` +
       `• Giá mở: *${order.open_price}*\n` +
       `• Giá đóng: *${close_price}*\n` +
-      `• Lợi nhuận: *${profit >= 0 ? '+' : ''}${safeProfit} USD*\n ` +
+      `• Lợi nhuận gộp: *${fmtSigned(gross)} USD*\n`;
+    if (swapN !== 0) {
+      message += `• Phí qua đêm: *${fmtSigned(swapN)} USD*\n`;
+    }
+    if (commissionTotal !== 0) {
+      message += `• Hoa hồng: *${fmtSigned(commissionTotal)} USD*\n`;
+    }
+    message +=
+      `• Lợi nhuận thực: *${fmtSigned(net)} USD*\n` +
       `• Ticket: ${ticket}\n` +
       `• Thời gian đóng: ${date}\n` +
       (safeComment ? `• Ghi chú: \`${safeComment}\`\n` : '');
