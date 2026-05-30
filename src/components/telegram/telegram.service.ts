@@ -35,11 +35,6 @@ interface ProfitBreakdown {
   netProfit: number;
 }
 
-// MT5 lưu commission/fee chỉ ở close-side của deal (single-side).
-// Broker ECN/STP charge round-turn (open + close), nên khi tính tổng để hiển thị
-// phải x2 cho khớp tổng MT5. DB vẫn giữ raw single-side.
-const COMMISSION_ROUND_TURN_MULTIPLIER = 2;
-
 const fmtSigned = (n: number, digits = 2) =>
   `${n >= 0 ? '+' : ''}${n.toFixed(digits)}`;
 
@@ -306,9 +301,8 @@ export class TelegramService implements OnModuleInit {
     const r = result[0] || {};
     const grossProfit = r.grossProfit || 0;
     const swap = r.swap || 0;
-    // x2 vì DB lưu single-side, broker charge round-turn
-    const commission = (r.commission || 0) * COMMISSION_ROUND_TURN_MULTIPLIER;
-    const fee = (r.fee || 0) * COMMISSION_ROUND_TURN_MULTIPLIER;
+    const commission = r.commission || 0;
+    const fee = r.fee || 0;
     return {
       grossProfit,
       commission,
@@ -900,12 +894,8 @@ Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao d
 
     const gross = typeof profit === 'number' ? profit : 0;
     const swapN = typeof swap === 'number' ? swap : 0;
-    // x2 vì MT5 chỉ trả single-side, broker charge round-turn
-    const commissionN =
-      (typeof commission === 'number' ? commission : 0) *
-      COMMISSION_ROUND_TURN_MULTIPLIER;
-    const feeN =
-      (typeof fee === 'number' ? fee : 0) * COMMISSION_ROUND_TURN_MULTIPLIER;
+    const commissionN = typeof commission === 'number' ? commission : 0;
+    const feeN = typeof fee === 'number' ? fee : 0;
     const commissionTotal = commissionN + feeN;
     const net = gross + swapN + commissionTotal;
 

@@ -18,6 +18,9 @@ def get_complete_deals(now):
         deal_dict = deal._asdict()
         pos_id = deal.position_id
         entry = deal.entry
+        # Bỏ qua deal nạp/rút/chuyển tiền (balance): không có symbol/position
+        if not deal.symbol or pos_id == 0:
+            continue
         if entry == 0:
             deals_by_position[pos_id]['open'] = deal_dict
         elif entry == 1:
@@ -37,9 +40,11 @@ def get_complete_deals(now):
                 "close_price": close_deal['price'],
                 "close_time": close_deal['time'],
                 "profit": close_deal['profit'],
-                "swap": close_deal['swap'],
-                "commission": close_deal['commission'],
-                "fee": close_deal['fee'],
+                # Phí thật = tổng mọi leg của position. Sàn MT5 cũ để phí ở
+                # close-side, Bybit để ở open-side -> cộng cả 2 là đúng cho mọi sàn.
+                "swap": open_deal['swap'] + close_deal['swap'],
+                "commission": open_deal['commission'] + close_deal['commission'],
+                "fee": open_deal['fee'] + close_deal['fee'],
                 "ticket": close_deal['ticket'],
                 "order": close_deal['order'],
                 "external_id": close_deal['external_id'],
