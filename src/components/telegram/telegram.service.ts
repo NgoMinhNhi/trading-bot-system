@@ -483,7 +483,7 @@ Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao d
     });
 
     // Lệnh /profits
-    this.bot.onText(/^\/profits\s+(.*)$/, async (msg, match) => {
+    this.bot.onText(/^\/profits(?:@\w+)?\s+(.*)$/, async (msg, match) => {
       if (!match || !match[0]) {
         await this.sendMessage(
           msg.chat.id,
@@ -496,7 +496,6 @@ Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao d
       }
 
       const chatId = msg.chat.id;
-      const inputText = match[0];
       const duration = this.parseDuration(match[0], 'profits');
 
       if (!duration) {
@@ -510,48 +509,35 @@ Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao d
         return;
       }
 
-      const accounts = await this.mt5AccountModel
-        .find({ chatIds: chatId })
-        .lean();
-
-      if (!accounts.length) {
-        await this.sendMessage(
-          chatId,
-          '⚠️ Không tìm thấy tài khoản nào liên kết với Telegram này.',
-        );
-        return;
-      }
-
-      for (const account of accounts) {
-        const accountId = (account._id as mongoose.Types.ObjectId).toString();
-        const breakdown = await this.getClosedProfitWithinDuration(
-          accountId,
-          duration,
-        );
-        const netProfit = breakdown.netProfit;
-        const currency = account?.currency || 'USD';
-        let profitRate: any = null;
-        if (account?.balanceInit) {
-          profitRate = roundTo((netProfit / account.balanceInit) * 100, 2);
-        }
-        const timeLabel = inputText.split(' ')[1] || 'khoảng thời gian';
-
-        let message =
-          `💰 *Tổng lợi nhuận đã đóng (${timeLabel})*\n` +
-          `• Tài khoản: *${account.login}*${account?.name ? ` - *${account.name}*` : ''}\n` +
-          `• Server: ${account.server}\n` +
-          `${this.buildBreakdownLines(breakdown, currency)}\n` +
-          `• Lợi nhuận thực: *${fmtSigned(netProfit)} ${currency}*`;
-        if (profitRate !== null) {
-          message += ` (${profitRate}%)`;
-        }
-
-        await this.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-        await sleep(1000);
-      }
+      const timeLabel = match[0].split(' ')[1] || 'khoảng thời gian';
+      await this.handleProfits(chatId, duration, timeLabel);
     });
 
-    this.bot.onText(/^\/pnl$/, async (msg) => {
+    // Shortcut /profits_1d, /profits_1h, /profits_24h, ... (không có khoảng trắng)
+    this.bot.onText(
+      /^\/profits_(\d+)([dhmM])(?:@\w+)?$/,
+      async (msg, match) => {
+        const chatId = msg.chat.id;
+        const timeLabel = `${match?.[1]}${match?.[2]}`;
+        const duration = this.parseDuration(
+          `/profits ${timeLabel}`,
+          'profits',
+        );
+
+        if (!duration) {
+          await this.sendMessage(
+            chatId,
+            '❌ Không hiểu yêu cầu. Ví dụ đúng: `/profits_7d`, `/profits_24h`',
+            { parse_mode: 'Markdown' },
+          );
+          return;
+        }
+
+        await this.handleProfits(chatId, duration, timeLabel);
+      },
+    );
+
+    this.bot.onText(/^\/pnl(?:@\w+)?$/, async (msg) => {
       console.log('Received /pnl command');
       const chatId = msg.chat.id;
 
@@ -606,7 +592,7 @@ Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao d
       }
     });
 
-    this.bot.onText(/^\/pnl_slot$/, async (msg) => {
+    this.bot.onText(/^\/pnl_slot(?:@\w+)?$/, async (msg) => {
       const chatId = msg.chat.id;
       const accounts = await this.mt5AccountModel
         .find({ chatIds: chatId })
@@ -633,7 +619,7 @@ Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao d
     });
 
     this.bot.onText(
-      /^\/pnl_slot_vnd\s+([0-9]+(?:\.[0-9]+)?)$/,
+      /^\/pnl_slot_vnd(?:@\w+)?\s+([0-9]+(?:\.[0-9]+)?)$/,
       async (msg, match) => {
         const chatId = msg.chat.id;
         const rate = parseFloat(match?.[1] || '0');
@@ -684,7 +670,7 @@ Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao d
     );
 
     this.bot.onText(
-      /^\/pnl_slot_vnd_export\s+([0-9]+(?:\.[0-9]+)?)$/,
+      /^\/pnl_slot_vnd_export(?:@\w+)?\s+([0-9]+(?:\.[0-9]+)?)$/,
       async (msg, match) => {
         const chatId = msg.chat.id;
         const rate = parseFloat(match?.[1] || '0');
@@ -754,7 +740,7 @@ Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao d
       },
     );
 
-    this.bot.onText(/^\/profits_slot\s+(.*)$/, async (msg, match) => {
+    this.bot.onText(/^\/profits_slot(?:@\w+)?\s+(.*)$/, async (msg, match) => {
       const chatId = msg.chat.id;
 
       if (!match || !match[0]) {
@@ -811,8 +797,51 @@ Hãy chọn lệnh phù hợp để bắt đầu! Chúc bạn có những giao d
     });
   }
 
+  private async handleProfits(
+    chatId: number,
+    duration: number,
+    timeLabel: string,
+  ): Promise<void> {
+    const accounts = await this.mt5AccountModel.find({ chatIds: chatId }).lean();
+
+    if (!accounts.length) {
+      await this.sendMessage(
+        chatId,
+        '⚠️ Không tìm thấy tài khoản nào liên kết với Telegram này.',
+      );
+      return;
+    }
+
+    for (const account of accounts) {
+      const accountId = (account._id as mongoose.Types.ObjectId).toString();
+      const breakdown = await this.getClosedProfitWithinDuration(
+        accountId,
+        duration,
+      );
+      const netProfit = breakdown.netProfit;
+      const currency = account?.currency || 'USD';
+      let profitRate: any = null;
+      if (account?.balanceInit) {
+        profitRate = roundTo((netProfit / account.balanceInit) * 100, 2);
+      }
+
+      let message =
+        `💰 *Tổng lợi nhuận đã đóng (${timeLabel})*\n` +
+        `• Tài khoản: *${account.login}*${account?.name ? ` - *${account.name}*` : ''}\n` +
+        `• Server: ${account.server}\n` +
+        `${this.buildBreakdownLines(breakdown, currency)}\n` +
+        `• Lợi nhuận thực: *${fmtSigned(netProfit)} ${currency}*`;
+      if (profitRate !== null) {
+        message += ` (${profitRate}%)`;
+      }
+
+      await this.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+      await sleep(1000);
+    }
+  }
+
   private parseDuration(text: string, command: string): number | null {
-    const regex = new RegExp(`^\\/${command}\\s+(\\d+)([dhmM])$`);
+    const regex = new RegExp(`^\\/${command}(?:@\\w+)?\\s+(\\d+)([dhmM])$`);
     const match = text.trim().match(regex);
     if (!match) return null;
 
