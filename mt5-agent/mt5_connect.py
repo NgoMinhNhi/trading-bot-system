@@ -238,9 +238,7 @@ def get_mt5_allV2():
 def health_check():
     return jsonify({
         "status": "ok",
-        "mt5_connection": "CONNECTED" if mt5.terminal_info() else "DISCONNECTED",
-        "cached_accounts": list(MT5_ACCOUNTS.keys()),
-        "cache_size": len(MT5_ACCOUNTS)
+        "mt5_connection": "CONNECTED" if mt5.terminal_info() else "DISCONNECTED"
     })
 
 if __name__ == '__main__':
