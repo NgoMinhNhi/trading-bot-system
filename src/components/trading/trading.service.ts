@@ -1,7 +1,10 @@
 // src/components/trading/trading.service.ts
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { promises as fs } from 'fs';
+import * as path from 'path';
 import { Order, OrderDocument, OrderStatus } from './schemas/order.schema';
 import {
   AccountStatus,
@@ -22,6 +25,7 @@ export class TradingService {
     private mt5AccountModel: Model<Mt5AccountDocument>,
     private apiClientService: ApiClientService,
     private telegramService: TelegramService,
+    private configService: ConfigService,
   ) {}
 
   async createOrder(orderData: any): Promise<Order | null> {
@@ -84,6 +88,7 @@ export class TradingService {
         password: account.password,
         server: account.server,
       });
+      await this.dumpHistoryOrdersIfEnabled(account, data);
       if (!account?.ignoreOpenDeal) {
         await this.checkOpenPositions(data?.open_positions, account);
       }
@@ -91,6 +96,78 @@ export class TradingService {
     } catch (error) {
       this.logger.error(
         `checkOpenPositions error (login ${account.login}): ${error.message}`,
+      );
+    }
+  }
+
+  private isHistoryOrderDumpEnabled(): boolean {
+    const value = this.configService.get<string>('HISTORY_ORDER_DUMP_ENABLED');
+    return ['1', 'true', 'yes', 'on'].includes((value || '').toLowerCase());
+  }
+
+  private getHistoryOrderDumpDir(): string {
+    const configuredDir = this.configService.get<string>('HISTORY_ORDER_DUMP_DIR');
+    const dumpDir = configuredDir || 'history-order-dumps';
+    return path.isAbsolute(dumpDir)
+      ? dumpDir
+      : path.resolve(process.cwd(), dumpDir);
+  }
+
+  private sanitizeFileName(value: any): string {
+    return String(value ?? 'unknown').replace(/[^a-zA-Z0-9._-]+/g, '_');
+  }
+
+  private async dumpHistoryOrdersIfEnabled(
+    account: any,
+    data: any,
+  ): Promise<void> {
+    if (!this.isHistoryOrderDumpEnabled()) {
+      return;
+    }
+
+    try {
+      const dumpDir = this.getHistoryOrderDumpDir();
+      await fs.mkdir(dumpDir, { recursive: true });
+
+      const fileName = `history-orders-${this.sanitizeFileName(
+        account.login,
+      )}-${this.sanitizeFileName(account.server)}.json`;
+      const filePath = path.join(dumpDir, fileName);
+      const tmpPath = `${filePath}.tmp`;
+      const closedDeals = Array.isArray(data?.closed_deals)
+        ? data.closed_deals
+        : [];
+
+      const payload = {
+        dumpedAt: new Date().toISOString(),
+        source: 'apiClientService.getAllData(/mt5/all-v2)',
+        account: {
+          _id: account?._id?.toString?.() || account?._id,
+          login: account?.login,
+          name: account?.name,
+          server: account?.server,
+          mt5Path: account?.mt5Path,
+        },
+        apiStatus: data?.status,
+        apiAccount: data?.account,
+        counts: {
+          closedDeals: closedDeals.length,
+          openPositions: Array.isArray(data?.open_positions)
+            ? data.open_positions.length
+            : 0,
+        },
+        historyOrders: closedDeals,
+      };
+
+      await fs.writeFile(tmpPath, JSON.stringify(payload, null, 2), 'utf8');
+      await fs.rename(tmpPath, filePath);
+      this.logger.log(
+        `History order dump saved for login ${account.login}: ${filePath}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to dump history orders for login ${account.login}: ${error.message}`,
+        error.stack,
       );
     }
   }
