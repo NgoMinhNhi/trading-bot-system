@@ -57,3 +57,4 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # MT5 history order debug dumps
 /history-order-dumps
+/mt5-raw-history-dumps

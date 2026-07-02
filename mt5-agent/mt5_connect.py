@@ -4,12 +4,29 @@ from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 import datetime as dt
 from functools import wraps
+import json
+import os
+from pathlib import Path
+import re
+from dotenv import load_dotenv
+
+
+def load_environment():
+    candidate_paths = [
+        Path.cwd() / ".env",
+        Path(__file__).resolve().parent.parent / ".env",
+        Path(__file__).resolve().parent / ".env",
+    ]
+    for env_path in candidate_paths:
+        if env_path.exists():
+            load_dotenv(env_path, override=False)
+
+
+load_environment()
 
 app = Flask(__name__)
 
-
-def get_complete_deals(now):
-    history = mt5.history_deals_get(now - timedelta(days=4), now)
+def get_complete_deals(history):
     if not history:
         return []
 
@@ -58,6 +75,77 @@ def get_complete_deals(now):
 
     return complete_positions
 
+
+def is_raw_history_dump_enabled():
+    value = os.getenv("MT5_RAW_HISTORY_DUMP_ENABLED", "")
+    return value.lower() in ("1", "true", "yes", "on")
+
+
+def sanitize_file_name(value):
+    return re.sub(r"[^a-zA-Z0-9._-]+", "_", str(value or "unknown"))
+
+
+def get_raw_history_dump_dir():
+    dump_dir = os.getenv("MT5_RAW_HISTORY_DUMP_DIR", "mt5-raw-history-dumps")
+    path = Path(dump_dir)
+    return path if path.is_absolute() else Path.cwd() / path
+
+
+def dump_raw_history_if_enabled(
+    account_id,
+    server,
+    mt5_path,
+    account_info,
+    history_from,
+    history_to,
+    history_deals,
+    history_orders,
+):
+    if not is_raw_history_dump_enabled():
+        return
+
+    try:
+        dump_dir = get_raw_history_dump_dir()
+        dump_dir.mkdir(parents=True, exist_ok=True)
+
+        file_name = (
+            f"raw-history-{sanitize_file_name(account_id)}-"
+            f"{sanitize_file_name(server)}.json"
+        )
+        file_path = dump_dir / file_name
+        tmp_path = file_path.with_suffix(file_path.suffix + ".tmp")
+
+        raw_deals = [deal._asdict() for deal in history_deals] if history_deals else []
+        raw_orders = [order._asdict() for order in history_orders] if history_orders else []
+
+        payload = {
+            "dumpedAt": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "source": "mt5.history_deals_get + mt5.history_orders_get before get_complete_deals",
+            "query": {
+                "from": history_from.isoformat(),
+                "to": history_to.isoformat(),
+                "rangeDays": (history_to - history_from).total_seconds() / 86400,
+            },
+            "account": {
+                "login": account_id,
+                "server": server,
+                "mt5Path": mt5_path,
+            },
+            "accountInfo": account_info._asdict() if account_info else None,
+            "counts": {
+                "rawDeals": len(raw_deals),
+                "rawOrders": len(raw_orders),
+            },
+            "rawDeals": raw_deals,
+            "rawOrders": raw_orders,
+        }
+
+        tmp_path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+        tmp_path.replace(file_path)
+        print(f"Raw MT5 history dump saved for login {account_id}: {file_path}")
+    except Exception as exc:
+        print(f"Failed to dump raw MT5 history for login {account_id}: {exc}")
+
 @app.route('/mt5/all-v2', methods=['POST'])
 def get_mt5_allV2():
     data = request.json or {}
@@ -90,7 +178,20 @@ def get_mt5_allV2():
 
     # === Lấy lịch sử đóng lệnh ===
     now = datetime.now(timezone.utc) + timedelta(hours=24)
-    closed = get_complete_deals(now)
+    history_from = now - timedelta(days=4)
+    history_deals = mt5.history_deals_get(history_from, now)
+    history_orders = mt5.history_orders_get(history_from, now)
+    dump_raw_history_if_enabled(
+        account_id=account_id,
+        server=data.get("server") or info.server,
+        mt5_path=mt5_path,
+        account_info=info,
+        history_from=history_from,
+        history_to=now,
+        history_deals=history_deals,
+        history_orders=history_orders,
+    )
+    closed = get_complete_deals(history_deals)
 
     return jsonify({
         "status": "success",
