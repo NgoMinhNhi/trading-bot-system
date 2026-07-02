@@ -26,52 +26,77 @@ load_environment()
 
 app = Flask(__name__)
 
+
+def sum_field(deals, field):
+    return sum(float(deal.get(field) or 0) for deal in deals)
+
+
+def weighted_average_price(deals):
+    total_volume = sum_field(deals, "volume")
+    if total_volume == 0:
+        return deals[-1].get("price") if deals else 0
+    return sum(
+        float(deal.get("price") or 0) * float(deal.get("volume") or 0)
+        for deal in deals
+    ) / total_volume
+
+
+def round_number(value, digits=2):
+    return round(float(value or 0), digits)
+
+
 def get_complete_deals(history):
     if not history:
         return []
 
-    deals_by_position = defaultdict(dict)
+    deals_by_position = defaultdict(list)
     for deal in history:
         deal_dict = deal._asdict()
         pos_id = deal.position_id
-        entry = deal.entry
         # Bỏ qua deal nạp/rút/chuyển tiền (balance): không có symbol/position
         if not deal.symbol or pos_id == 0:
             continue
-        if entry == 0:
-            deals_by_position[pos_id]['open'] = deal_dict
-        elif entry == 1:
-            deals_by_position[pos_id]['close'] = deal_dict
+        deals_by_position[pos_id].append(deal_dict)
 
     complete_positions = []
-    for pos_id, deals in deals_by_position.items():
-        open_deal = deals.get('open')
-        close_deal = deals.get('close')
-        if open_deal and close_deal:
-            complete_positions.append({
-                "position_id": pos_id,
-                "symbol": open_deal['symbol'],
-                "volume": open_deal['volume'],
-                "open_price": open_deal['price'],
-                "open_time": open_deal['time'],
-                "close_price": close_deal['price'],
-                "close_time": close_deal['time'],
-                "profit": close_deal['profit'],
-                # Phí thật = tổng mọi leg của position. Sàn MT5 cũ để phí ở
-                # close-side, Bybit để ở open-side -> cộng cả 2 là đúng cho mọi sàn.
-                "swap": open_deal['swap'] + close_deal['swap'],
-                "commission": open_deal['commission'] + close_deal['commission'],
-                "fee": open_deal['fee'] + close_deal['fee'],
-                "ticket": close_deal['ticket'],
-                "order": close_deal['order'],
-                "external_id": close_deal['external_id'],
-                "comment": close_deal['comment'],
-                "type": close_deal['type'],
-                "reason": close_deal['reason'],
-                "status": "CLOSED",
-                "createdAt": dt.datetime.now(dt.timezone.utc).isoformat(),
-                "updatedAt": dt.datetime.now(dt.timezone.utc).isoformat()
-            })
+    for pos_id, position_deals in deals_by_position.items():
+        position_deals.sort(key=lambda item: (item.get("time") or 0, item.get("ticket") or 0))
+
+        open_deals = [deal for deal in position_deals if deal.get("entry") == 0]
+        close_deals = [
+            deal for deal in position_deals if deal.get("entry") in (1, 3)
+        ]
+
+        if not open_deals or not close_deals:
+            continue
+
+        open_deal = open_deals[0]
+        close_deal = close_deals[-1]
+        close_volume = sum_field(close_deals, "volume")
+
+        complete_positions.append({
+            "position_id": pos_id,
+            "symbol": open_deal["symbol"],
+            "volume": round_number(close_volume, 8),
+            "open_price": round_number(weighted_average_price(open_deals), 5),
+            "open_time": min(deal["time"] for deal in open_deals),
+            "close_price": round_number(weighted_average_price(close_deals), 5),
+            "close_time": max(deal["time"] for deal in close_deals),
+            "profit": round_number(sum_field(close_deals, "profit")),
+            # Phí/swap thật nằm rải ở nhiều leg, đặc biệt close-by entry=3.
+            "swap": round_number(sum_field(position_deals, "swap")),
+            "commission": round_number(sum_field(position_deals, "commission")),
+            "fee": round_number(sum_field(position_deals, "fee")),
+            "ticket": close_deal["ticket"],
+            "order": close_deal["order"],
+            "external_id": close_deal.get("external_id", ""),
+            "comment": close_deal.get("comment", ""),
+            "type": close_deal["type"],
+            "reason": close_deal["reason"],
+            "status": "CLOSED",
+            "createdAt": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "updatedAt": dt.datetime.now(dt.timezone.utc).isoformat()
+        })
 
     return complete_positions
 
@@ -89,6 +114,14 @@ def get_raw_history_dump_dir():
     dump_dir = os.getenv("MT5_RAW_HISTORY_DUMP_DIR", "mt5-raw-history-dumps")
     path = Path(dump_dir)
     return path if path.is_absolute() else Path.cwd() / path
+
+
+def get_history_days():
+    try:
+        days = float(os.getenv("MT5_HISTORY_DAYS", "6"))
+    except ValueError:
+        return 6
+    return days if days > 0 else 6
 
 
 def dump_raw_history_if_enabled(
@@ -178,7 +211,7 @@ def get_mt5_allV2():
 
     # === Lấy lịch sử đóng lệnh ===
     now = datetime.now(timezone.utc) + timedelta(hours=24)
-    history_from = now - timedelta(days=4)
+    history_from = now - timedelta(days=get_history_days())
     history_deals = mt5.history_deals_get(history_from, now)
     history_orders = mt5.history_orders_get(history_from, now)
     dump_raw_history_if_enabled(

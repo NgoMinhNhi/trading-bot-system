@@ -63,6 +63,53 @@ export class TradingService {
     return this.orderModel.updateOne({ order }, data).exec();
   }
 
+  async updateOrderById(id: any, data: any): Promise<any> {
+    return this.orderModel.updateOne({ _id: id }, data).exec();
+  }
+
+  async findTrackedOrder(accountId: any, orderData: any): Promise<Order | null> {
+    if (orderData?.position_id) {
+      return this.orderModel
+        .findOne({ accountId, position_id: orderData.position_id })
+        .exec();
+    }
+
+    const filters = [];
+    if (orderData?.ticket) {
+      filters.push({ accountId, ticket: orderData.ticket });
+    }
+    if (orderData?.order) {
+      filters.push({ accountId, order: orderData.order });
+    }
+
+    if (!filters.length) {
+      return null;
+    }
+
+    return this.orderModel.findOne({ $or: filters }).exec();
+  }
+
+  private hasTrackedOrderChanged(existing: any, orderData: any): boolean {
+    const fields = [
+      'ticket',
+      'order',
+      'position_id',
+      'commission',
+      'fee',
+      'profit',
+      'reason',
+      'swap',
+      'symbol',
+      'time',
+      'type',
+      'volume',
+      'open_time',
+      'close_time',
+    ];
+
+    return fields.some((field) => existing?.[field] !== orderData?.[field]);
+  }
+
   async findActiveAccounts(): Promise<Mt5AccountDocument[]> {
     return this.mt5AccountModel.find({ status: AccountStatus.ACTIVE }).exec();
   }
@@ -203,7 +250,7 @@ export class TradingService {
             order.close_time =
               order?.close_time - 3 * 60 * 60 || new Date().getTime();
 
-            const existing = await this.findByOrderId(order.order);
+            const existing = await this.findTrackedOrder(account._id, order);
 
             // Nếu chưa tồn tại => tạo mới + gửi notify
             if (!existing) {
@@ -230,8 +277,21 @@ export class TradingService {
                   order,
                 );
               }
-              await this.updateOrder(order.order, {
+              await this.updateOrderById(existing._id, {
                 ...order,
+                accountId: account._id,
+                status: OrderStatus.CLOSED,
+              });
+            }
+            // Nếu dữ liệu CLOSED cũ bị tính sai (ví dụ thiếu close-by entry=3)
+            // thì cập nhật im lặng để báo cáo PnL lần sau dùng số thực tế.
+            else if (
+              existing.status === OrderStatus.CLOSED &&
+              this.hasTrackedOrderChanged(existing, order)
+            ) {
+              await this.updateOrderById(existing._id, {
+                ...order,
+                accountId: account._id,
                 status: OrderStatus.CLOSED,
               });
             }
